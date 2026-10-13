@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+.npm/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Test output
+coverage/
+.nyc_output/
+junit*.xml
+test-results/
+reports/
+
+# Environment and secrets (never commit real values)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+.secrets/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Docker / local data
+docker-compose.override.yml
+compose.override.yaml
+.docker-data/
+
+# Infrastructure tooling (future phases)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.retry
+kubeconfig
+*.kubeconfig
+charts/*.tgz
+helm/**/charts/*.tgz
+
+# IDEs and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini

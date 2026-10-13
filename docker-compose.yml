@@ -1,0 +1,162 @@
+# devops-production-platform - local runtime (Phase 1)
+#
+#   Copy-Item .env.example .env   # then edit the passwords
+#   docker compose up -d --build --wait
+#
+# Only the API gateway is meant for clients. Internal services and PostgreSQL are
+# published on 127.0.0.1 solely for local debugging; nothing else is exposed.
+
+name: devops-production-platform
+
+x-node-service: &node-service
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  init: true
+  stop_grace_period: 15s
+  networks:
+    - backend
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  deploy:
+    resources:
+      limits:
+        cpus: "0.50"
+        memory: 256M
+      reservations:
+        memory: 64M
+
+x-node-healthcheck: &node-healthcheck
+  interval: 10s
+  timeout: 3s
+  retries: 5
+  start_period: 20s
+
+services:
+  postgres:
+    image: postgres:17.7-alpine3.22
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: postgres
+      PRODUCT_DB_PASSWORD: ${PRODUCT_DB_PASSWORD:?PRODUCT_DB_PASSWORD must be set in .env}
+      ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD:?ORDER_DB_PASSWORD must be set in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    shm_size: 128m
+    networks:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+
+  product-service:
+    <<: *node-service
+    image: devops-production-platform/product-service:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: services/product-service/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "7001"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: products_db
+      DB_USER: product_svc
+      DB_PASSWORD: ${PRODUCT_DB_PASSWORD:?PRODUCT_DB_PASSWORD must be set in .env}
+    ports:
+      - "127.0.0.1:${PRODUCT_SERVICE_HOST_PORT:-7001}:7001"
+    healthcheck:
+      <<: *node-healthcheck
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:7001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  order-service:
+    <<: *node-service
+    image: devops-production-platform/order-service:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: services/order-service/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "7002"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: orders_db
+      DB_USER: order_svc
+      DB_PASSWORD: ${ORDER_DB_PASSWORD:?ORDER_DB_PASSWORD must be set in .env}
+      PRODUCT_SERVICE_URL: http://product-service:7001
+      PRODUCT_SERVICE_TIMEOUT_MS: ${PRODUCT_SERVICE_TIMEOUT_MS:-2000}
+    ports:
+      - "127.0.0.1:${ORDER_SERVICE_HOST_PORT:-7002}:7002"
+    healthcheck:
+      <<: *node-healthcheck
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:7002/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+
+  api-gateway:
+    <<: *node-service
+    image: devops-production-platform/api-gateway:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "7000"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PRODUCT_SERVICE_URL: http://product-service:7001
+      ORDER_SERVICE_URL: http://order-service:7002
+      UPSTREAM_TIMEOUT_MS: ${UPSTREAM_TIMEOUT_MS:-5000}
+    ports:
+      - "${GATEWAY_BIND_ADDRESS:-127.0.0.1}:${GATEWAY_HOST_PORT:-7000}:7000"
+    healthcheck:
+      <<: *node-healthcheck
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:7000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    depends_on:
+      product-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+
+networks:
+  backend:
+    name: devops-production-platform-backend
+
+volumes:
+  postgres-data:
+    name: devops-production-platform-postgres-data

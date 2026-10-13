@@ -1,0 +1,5 @@
+# Normalise line endings so shell scripts and Dockerfiles keep LF inside Linux containers.
+* text=auto eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.ps1 text eol=crlf
