@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DPP showcase - thumbnail</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .content { position: absolute; left: 7vw; top: 50%; transform: translateY(-50%); width: 62vw; }
+  h1 { font-size: 6.4vw; margin: 1.4vw 0 1.4vw; }
+  .subtitle { font-size: 2.1vw; margin-bottom: 3vw; }
+  .chip { font-size: 1.35vw; padding: 0.6vw 1.2vw; }
+  .play {
+    position: absolute; right: 9vw; top: 50%; transform: translateY(-50%);
+    width: 15vw; height: 15vw; border-radius: 50%; border: 0.25vw solid rgba(56, 189, 248, 0.8);
+    background: rgba(18, 32, 59, 0.7); box-shadow: 0 0 4vw rgba(56, 189, 248, 0.35);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .play::after { content: ""; margin-left: 1.2vw; border-left: 4.4vw solid var(--text); border-top: 2.6vw solid transparent; border-bottom: 2.6vw solid transparent; }
+  .badge { position: absolute; right: 7.4vw; top: calc(50% + 10vw); width: 18vw; text-align: center; font-size: 1.3vw; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="grid"></div>
+  <div class="content">
+    <div class="eyebrow">Project demo</div>
+    <h1>DevOps Production Platform</h1>
+    <div class="subtitle">Automated CI/CD &bull; DevSecOps &bull; Infrastructure Automation</div>
+    <div class="chips">
+      <span class="chip">Jenkins</span><span class="chip">SonarQube</span><span class="chip">Trivy</span>
+      <span class="chip">Docker</span><span class="chip">GHCR</span><span class="chip">Ansible</span>
+    </div>
+  </div>
+  <div class="play"></div>
+  <div class="badge">Real pipeline &middot; real results</div>
+</div>
+</body>
+</html>

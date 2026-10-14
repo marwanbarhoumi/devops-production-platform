@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DPP showcase - ansible evidence</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* Renders docs/demo/evidence/ansible-validation.txt verbatim (the capture script fills in the lines). */
+  html, body { overflow-y: auto; height: auto; }
+  .stage { position: fixed; }
+  .window {
+    position: relative; margin: 3.2vw auto; width: 86vw; border-radius: 0.9vw; overflow: hidden;
+    border: 1px solid var(--line); background: rgba(7, 13, 26, 0.92); box-shadow: 0 2vw 5vw rgba(0, 0, 0, 0.5);
+  }
+  .bar { display: flex; align-items: center; gap: 0.5vw; padding: 0.8vw 1.1vw; background: var(--navy-800); border-bottom: 1px solid var(--line); }
+  .bar i { width: 0.75vw; height: 0.75vw; border-radius: 50%; background: #334a75; }
+  .bar span { margin-left: 1vw; font-size: 0.95vw; color: var(--muted); }
+  pre { padding: 1.4vw 1.8vw 2vw; font: 1.02vw/1.55 "Cascadia Code", Consolas, monospace; color: #c9d6f0; white-space: pre-wrap; font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+  .cmd { color: var(--cyan); font-weight: 600; }
+  .ok { color: var(--green); font-weight: 600; }
+  .bad { color: var(--amber); }
+  .dim { color: #6f82a8; }
+</style>
+</head>
+<body>
+<div class="stage"><div class="grid"></div></div>
+<div class="window">
+  <div class="bar"><i></i><i></i><i></i><span>Real output &middot; docs/demo/evidence/ansible-validation.txt</span></div>
+  <pre><!--EVIDENCE--></pre>
+</div>
+</body>
+</html>

@@ -1,0 +1,74 @@
+﻿# Ansible validation evidence - devops-production-platform
+# Captured 2026-10-14 14:41 (+01:00) by scripts/demo/collect-evidence.ps1 at commit c6230df
+# Commands run in the containerized controller (ansible/ansible.ps1); output copied verbatim (colours removed).
+
+$ ansible --version
+ansible [core 2.21.5]
+(exit code 0)
+
+$ ansible-lint
+Passed: 0 failure(s), 0 warning(s) in 18 files processed of 32 encountered. Profile 'production' was required, and it passed.
+(exit code 0)
+
+$ ansible-playbook -i inventory/dev.ini.example playbooks/site.yml --syntax-check
+playbook: playbooks/site.yml
+(exit code 0)
+
+$ ansible-playbook -i inventory/dev.ini.example playbooks/common.yml --syntax-check
+playbook: playbooks/common.yml
+(exit code 0)
+
+$ ansible-playbook -i inventory/dev.ini.example playbooks/docker.yml --syntax-check
+playbook: playbooks/docker.yml
+(exit code 0)
+
+$ ansible-inventory -i inventory/local-test.ini --graph
+@all:
+  |--@ungrouped:
+  |--@managed:
+  |  |--@local_test:
+  |  |  |--dpp-test-target
+(exit code 0)
+
+$ ansible-playbook -i inventory/dev.ini.example playbooks/site.yml   # unedited template: must be refused
+TASK [Refuse placeholder or local targets] *************************************
+[ERROR]: Task failed: Action failed: dev-app-1 (dev-app-1.example.invalid) is a placeholder or not an SSH target. Copy the example inventory, replace the placeholders with your server's real address and user, and try again.
+13 - name: Refuse placeholder or local targets
+    msg: dev-app-1 (dev-app-1.example.invalid) is a placeholder or not an SSH target.
+PLAY RECAP *********************************************************************
+dev-app-1                  : ok=1    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0
+(exit code 2)
+
+$ .\ansible\test\run-local-test.ps1   # end-to-end test against a disposable Ubuntu 24.04 target (summary)
+===== Wait for sshd on the test target =====
+===== Versions =====
+===== Inventory =====
+===== Lint and syntax =====
+Passed: 0 failure(s), 0 warning(s) in 18 files processed of 32 encountered. Profile 'production' was required, and it
+===== Connectivity (ping) and privilege escalation =====
+===== Safety: placeholder inventory is refused without contacting the host =====
+refused as expected
+===== Safety: production requires confirm_production=true =====
+refused as expected
+===== Check mode on a fresh minimal target stops with a clear message =====
+refused as expected
+===== Apply common.yml only =====
+dpp-test-target            : ok=13   changed=4    unreachable=0    failed=0    skipped=2    rescued=0    ignored=0
+===== Check mode of site.yml before Docker is installed (no changes made) =====
+dpp-test-target            : ok=22   changed=2    unreachable=0    failed=0    skipped=15   rescued=0    ignored=0
+===== Apply site.yml =====
+        Docker Engine 29.9.0,
+        Compose 5.6.0
+dpp-test-target            : ok=30   changed=7    unreachable=0    failed=0    skipped=8    rescued=0    ignored=0
+===== Idempotency: second run must report changed=0 =====
+        Docker Engine 29.9.0,
+        Compose 5.6.0
+dpp-test-target            : ok=28   changed=0    unreachable=0    failed=0    skipped=9    rescued=0    ignored=0
+===== Check mode on the configured target must report changed=0 =====
+dpp-test-target            : ok=27   changed=0    unreachable=0    failed=0    skipped=10   rescued=0    ignored=0
+===== Safety: check mode of a production host is allowed without confirmation =====
+dpp-test-target            : ok=27   changed=0    unreachable=0    failed=0    skipped=10   rescued=0    ignored=0
+===== Verify the result on the target =====
+docker run hello-world: OK
+ALL TESTS PASSED
+Local test: PASSED

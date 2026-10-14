@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DPP showcase - cover</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* The cover occupies the top 100vw x 52.25vw (1200x627 ratio); the capture crops and scales it. */
+  .stage { bottom: auto; height: 52.25vw; }
+  .content { position: absolute; left: 6vw; top: 6.3vw; width: 52vw; }
+  h1 { font-size: 5.3vw; margin: 1.3vw 0 1.3vw; }
+  .subtitle { font-size: 1.85vw; margin-bottom: 3vw; }
+  .chip { font-size: 1.2vw; padding: 0.55vw 1.1vw; }
+  .chips + .chips { margin-top: 0.8vw; }
+  .legend { margin-top: 2.6vw; font-size: 1.1vw; }
+  .dot { display: inline-block; width: 0.75vw; height: 0.75vw; border-radius: 50%; margin-right: 0.5vw; vertical-align: middle; }
+  svg.net { position: absolute; right: 2.5vw; top: 4vw; width: 38vw; height: 44vw; }
+  .label { font: 600 13px "Segoe UI", sans-serif; fill: #e8eefc; }
+  .label.next { fill: #93a4c7; font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="grid"></div>
+  <div class="content">
+    <div class="eyebrow">Hands-on DevOps portfolio project</div>
+    <h1>DevOps Production Platform</h1>
+    <div class="subtitle">Automated CI/CD &bull; DevSecOps &bull; Infrastructure Automation</div>
+    <div class="chips">
+      <span class="chip">Jenkins</span><span class="chip">Docker</span><span class="chip">SonarQube</span>
+      <span class="chip">Trivy</span><span class="chip">Ansible</span><span class="chip">GHCR</span>
+    </div>
+    <div class="chips">
+      <span class="chip next">Kubernetes</span><span class="chip next">Prometheus</span><span class="chip next">Grafana</span>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:#34d399"></span><b>Implemented</b></span>
+      <span><span class="dot" style="border:1px dashed #93a4c7"></span>Roadmap</span>
+    </div>
+  </div>
+  <svg class="net" viewBox="0 0 440 500" aria-hidden="true">
+    <defs>
+      <linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#34d399"/></linearGradient>
+    </defs>
+    <g fill="none" stroke="url(#g)" stroke-width="2" opacity="0.8">
+      <path d="M70 70 C 160 70, 160 160, 220 160"/>
+      <path d="M70 250 C 140 250, 150 160, 220 160"/>
+      <path d="M220 160 C 300 160, 300 90, 370 90"/>
+      <path d="M220 160 C 300 160, 300 250, 370 250"/>
+      <path d="M220 160 L 220 330"/>
+    </g>
+    <g fill="none" stroke="#93a4c7" stroke-width="1.6" stroke-dasharray="5 7" opacity="0.8">
+      <path d="M220 330 C 220 400, 110 400, 110 440"/>
+      <path d="M220 330 L 220 440"/>
+      <path d="M220 330 C 220 400, 330 400, 330 440"/>
+    </g>
+    <g stroke-width="2">
+      <rect x="20" y="48" width="100" height="44" rx="10" fill="#12203b" stroke="#34d399"/>
+      <rect x="20" y="228" width="100" height="44" rx="10" fill="#12203b" stroke="#34d399"/>
+      <rect x="160" y="128" width="120" height="64" rx="14" fill="#12203b" stroke="#38bdf8"/>
+      <rect x="320" y="68" width="100" height="44" rx="10" fill="#12203b" stroke="#34d399"/>
+      <rect x="320" y="228" width="100" height="44" rx="10" fill="#12203b" stroke="#34d399"/>
+      <rect x="160" y="308" width="120" height="44" rx="10" fill="#12203b" stroke="#34d399"/>
+      <rect x="55" y="440" width="110" height="40" rx="10" fill="none" stroke="#93a4c7" stroke-dasharray="4 5"/>
+      <rect x="170" y="440" width="100" height="40" rx="10" fill="none" stroke="#93a4c7" stroke-dasharray="4 5"/>
+      <rect x="275" y="440" width="110" height="40" rx="10" fill="none" stroke="#93a4c7" stroke-dasharray="4 5"/>
+    </g>
+    <text class="label" x="70" y="75" text-anchor="middle">Git push</text>
+    <text class="label" x="70" y="255" text-anchor="middle">Tests</text>
+    <text class="label" x="220" y="157" text-anchor="middle">CI pipeline</text>
+    <text class="label" x="220" y="175" text-anchor="middle" style="font-weight:400;fill:#93a4c7">quality + security gates</text>
+    <text class="label" x="370" y="95" text-anchor="middle">Images + SBOM</text>
+    <text class="label" x="370" y="255" text-anchor="middle">Registry</text>
+    <text class="label" x="220" y="335" text-anchor="middle">Ansible servers</text>
+    <text class="label next" x="110" y="465" text-anchor="middle">Kubernetes</text>
+    <text class="label next" x="220" y="465" text-anchor="middle">Helm</text>
+    <text class="label next" x="330" y="465" text-anchor="middle">Monitoring</text>
+  </svg>
+</div>
+</body>
+</html>

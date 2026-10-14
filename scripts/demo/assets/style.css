@@ -1,0 +1,55 @@
+/* Shared look for the showcase cards, cover and thumbnail. Sizes in vw so the result does not depend on
+   the monitor's scaling (the pages are rendered full screen at 1920x1080 physical pixels). */
+:root {
+  --navy-950: #070d1a;
+  --navy-900: #0b1426;
+  --navy-800: #12203b;
+  --navy-700: #1b2d50;
+  --line: #2a4170;
+  --text: #e8eefc;
+  --muted: #93a4c7;
+  --cyan: #38bdf8;
+  --green: #34d399;
+  --amber: #fbbf24;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100vw; height: 100vh; overflow: hidden; background: var(--navy-950); }
+body {
+  font-family: "Segoe UI", "Inter", system-ui, sans-serif;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+.stage {
+  position: absolute; inset: 0; overflow: hidden;
+  background:
+    radial-gradient(ellipse 60% 55% at 78% 30%, rgba(56, 189, 248, 0.16), transparent 70%),
+    radial-gradient(ellipse 50% 60% at 12% 85%, rgba(52, 211, 153, 0.10), transparent 70%),
+    linear-gradient(160deg, var(--navy-900), var(--navy-950) 65%);
+}
+.grid {
+  position: absolute; inset: 0; opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(56, 189, 248, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.07) 1px, transparent 1px);
+  background-size: 3.2vw 3.2vw;
+  mask-image: radial-gradient(ellipse 80% 80% at 60% 40%, black 30%, transparent 80%);
+}
+.eyebrow { font-size: 1.05vw; letter-spacing: 0.32em; text-transform: uppercase; color: var(--cyan); font-weight: 600; }
+h1 { font-weight: 700; letter-spacing: -0.02em; line-height: 1.02; }
+.subtitle { color: var(--muted); font-weight: 400; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.6vw; }
+.chip {
+  display: inline-flex; align-items: center; gap: 0.5vw;
+  padding: 0.45vw 0.95vw; border-radius: 999px; font-size: 1.02vw; font-weight: 600;
+  background: rgba(52, 211, 153, 0.10); border: 1px solid rgba(52, 211, 153, 0.45); color: #d1fae5;
+}
+.chip::before { content: ""; width: 0.55vw; height: 0.55vw; border-radius: 50%; background: var(--green); box-shadow: 0 0 0.6vw var(--green); }
+.chip.next { background: transparent; border: 1px dashed rgba(147, 164, 199, 0.55); color: var(--muted); font-weight: 500; }
+.chip.next::before { background: transparent; border: 1px solid var(--muted); box-shadow: none; }
+.legend { display: flex; gap: 1.6vw; font-size: 0.95vw; color: var(--muted); align-items: center; }
+.legend b { color: var(--text); font-weight: 600; }
+.url { font-family: "Cascadia Code", Consolas, monospace; color: var(--cyan); }
+.flow { stroke-dasharray: 6 8; animation: flow 1.6s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -28; } }
+.pulse { animation: pulse 2.4s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+@keyframes pulse { 50% { opacity: 0.55; } }

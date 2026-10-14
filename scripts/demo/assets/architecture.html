@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DPP showcase - architecture</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .content { position: absolute; left: 6vw; right: 6vw; top: 2.6vw; display: flex; flex-direction: column; gap: 1.15vw; }
+  h1 { font-size: 2.7vw; margin-top: 0.4vw; }
+  .lane { border: 1px solid var(--line); border-radius: 1vw; padding: 0.95vw 1.5vw; background: rgba(18, 32, 59, 0.55); }
+  .lane.next { border-style: dashed; background: transparent; }
+  .lane-title { font-size: 0.9vw; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.7vw; }
+  .row { display: flex; align-items: center; gap: 0.7vw; flex-wrap: nowrap; }
+  .box {
+    padding: 0.6vw 1vw; border-radius: 0.6vw; background: var(--navy-800); border: 1px solid #2f4b80;
+    font-size: 1.12vw; font-weight: 600; white-space: nowrap;
+  }
+  .box small { display: block; font-size: 0.8vw; font-weight: 400; color: var(--muted); margin-top: 0.2vw; }
+  .box.ok { border-color: rgba(52, 211, 153, 0.6); }
+  .lane.next .box { background: transparent; border-style: dashed; border-color: rgba(147, 164, 199, 0.5); color: var(--muted); font-weight: 500; }
+  .arrow { color: var(--cyan); font-size: 1.4vw; }
+  .stack { display: flex; flex-direction: column; gap: 0.4vw; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="grid"></div>
+  <div class="content">
+    <div>
+      <div class="eyebrow">Architecture</div>
+      <h1>From commit to verified, published images</h1>
+    </div>
+    <div class="lane">
+      <div class="lane-title">Application &middot; Docker Compose</div>
+      <div class="row">
+        <div class="box">Client</div><span class="arrow">&rarr;</span>
+        <div class="box">api-gateway<small>Express 5 &middot; routing, timeouts</small></div><span class="arrow">&rarr;</span>
+        <div class="stack">
+          <div class="box">product-service<small>catalogue</small></div>
+          <div class="box">order-service<small>orders, validates products</small></div>
+        </div><span class="arrow">&rarr;</span>
+        <div class="box">PostgreSQL 17<small>one database + role per service</small></div>
+      </div>
+    </div>
+    <div class="lane">
+      <div class="lane-title">Delivery pipeline &middot; Jenkins (controller + agent + Docker-in-Docker)</div>
+      <div class="row">
+        <div class="box">GitHub push</div><span class="arrow">&rarr;</span>
+        <div class="box ok">Lint &middot; type check<small>78 tests: unit, API, integration</small></div><span class="arrow">&rarr;</span>
+        <div class="box ok">SonarQube<small>quality gate</small></div><span class="arrow">&rarr;</span>
+        <div class="box ok">Trivy<small>repository + image scans</small></div><span class="arrow">&rarr;</span>
+        <div class="box ok">Docker images<small>CycloneDX SBOM each</small></div><span class="arrow">&rarr;</span>
+        <div class="box ok">GHCR<small>3 images, SHA tags</small></div>
+      </div>
+    </div>
+    <div class="lane">
+      <div class="lane-title">Infrastructure automation &middot; Ansible</div>
+      <div class="row">
+        <div class="box">Ansible controller<small>container, pinned versions</small></div><span class="arrow">&rarr;</span>
+        <div class="box">SSH + verified host keys<small>preflight safety checks</small></div><span class="arrow">&rarr;</span>
+        <div class="box ok">Ubuntu servers<small>common baseline + Docker Engine</small></div>
+      </div>
+    </div>
+    <div class="lane next">
+      <div class="lane-title">Roadmap &middot; not implemented yet</div>
+      <div class="row">
+        <div class="box">Kubernetes</div><div class="box">Helm</div><div class="box">Continuous deployment</div>
+        <div class="box">Prometheus &amp; Grafana</div><div class="box">Platform hardening</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
