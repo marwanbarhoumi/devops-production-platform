@@ -104,9 +104,10 @@ pipeline {
             }
             post {
                 always {
-                    junit testResults: 'reports/junit/integration/*.xml', allowEmptyResults: false
                     // Backstop for aborted builds; removes only containers labelled with this build's CI_RUN_ID.
+                    // Runs before junit, which throws when the tests never produced a report.
                     sh 'node scripts/ci/ephemeral-postgres.mjs cleanup'
+                    junit testResults: 'reports/junit/integration/*.xml', allowEmptyResults: false
                 }
                 failure { echo 'Integration tests failed: run "npm run test:integration:ci" locally (needs Docker).' }
             }

@@ -20,6 +20,7 @@ import { repoRoot, run } from './lib.mjs';
 
 const LABEL = 'dpp.ci.run';
 const READY_TIMEOUT_MS = 90_000;
+const PULL_ATTEMPTS = 3;
 
 /** Docker-safe identifier derived from CI_RUN_ID (Jenkins BUILD_TAG) or a random value. */
 export function resolveRunId(raw = process.env.CI_RUN_ID) {
@@ -79,6 +80,23 @@ function tcpReachable(host, port) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Pulls the image unless it is already present. Retries because a registry download can be cut off
+ * mid-layer ("short read ... unexpected EOF"); layers that completed are kept between attempts.
+ */
+async function ensureImage(image, log) {
+  if ((await run('docker', ['image', 'inspect', image], { capture: true })).code === 0) return;
+  for (let attempt = 1; ; attempt++) {
+    log(`[ephemeral-postgres] pulling ${image} (attempt ${attempt}/${PULL_ATTEMPTS})`);
+    const result = await run('docker', ['pull', '--quiet', image], { capture: true });
+    if (result.code === 0) return;
+    const reason = result.stderr.trim().split('\n').pop();
+    if (attempt >= PULL_ATTEMPTS) throw new Error(`docker pull ${image} failed ${attempt} times: ${reason}`);
+    log(`[ephemeral-postgres] pull failed (${reason}); retrying in ${attempt * 5}s`);
+    await sleep(attempt * 5000);
+  }
+}
+
 /** Removes every container created for the given run id (and their anonymous volumes). */
 export async function cleanupRun(runId) {
   const ids = (await docker(['ps', '-aq', '--filter', `label=${LABEL}=${runId}`])).split(/\s+/).filter(Boolean);
@@ -112,6 +130,7 @@ export async function startEphemeralPostgres({ runId = resolveRunId(), log = con
 
   // A previous attempt with the same run id (e.g. a Jenkins replay) may have left a container behind.
   await cleanupRun(runId);
+  await ensureImage(image, log);
 
   log(`[ephemeral-postgres] starting ${name} (${image}), published on ${bindAddress}:<random port>`);
   try {
