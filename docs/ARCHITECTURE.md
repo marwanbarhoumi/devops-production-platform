@@ -137,3 +137,18 @@ memory limits, rotated JSON logs (3 × 10 MB). PostgreSQL data lives in the name
 
 Internal services are published on `127.0.0.1` only for local debugging. In Kubernetes (Phase 5)
 they will be `ClusterIP` services reachable only through the gateway/ingress.
+
+## Continuous integration (Jenkins)
+
+```text
+GitHub push ──webhook──► Jenkins controller ──WebSocket──► agent ci-agent-1 ──TLS──► DinD daemon
+                         (0 executors)                     runs the Jenkinsfile         └─ dpp-it-<BUILD_TAG>
+                                                                                           (throwaway PostgreSQL)
+```
+
+Pipeline: Checkout → Verify Toolchain → Install Dependencies (`npm ci`) → Lint → Type Check →
+Unit & API Tests → Integration Tests → Build. Tests publish JUnit XML from `reports/junit/`. The
+integration-test database uses the same image and init script as the Compose stack, lives only for one
+build, and runs on the CI stack's private Docker daemon, so CI cannot affect the application stack. The
+Jenkins stack (`jenkins/docker-compose.yml`, project `dpp-jenkins`) is independent of the application
+stack. Details: [jenkins/README.md](../jenkins/README.md); rationale: DECISIONS D-015 to D-020.

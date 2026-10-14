@@ -10,7 +10,8 @@ Prometheus/Grafana/Alertmanager monitoring, and documented deployment and rollba
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | Foundation: microservices, PostgreSQL, Docker Compose, tests, health checks, metrics | **Complete** |
-| 2-10 | Jenkins CI, quality/security, Ansible, Kubernetes, Helm, CD, monitoring, hardening, portfolio | Pending |
+| 2 | CI with Jenkins: `Jenkinsfile`, local controller + build agent, JUnit reports, disposable test database | **Complete** ([jenkins/README.md](jenkins/README.md)) |
+| 3-10 | Quality/security, Ansible, Kubernetes, Helm, CD, monitoring, hardening, portfolio | Pending |
 
 See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) for the full roadmap and verification results,
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the system design and
@@ -55,8 +56,11 @@ devops-production-platform/
 │   └── order-service/        # src/, test/ (unit + *.int.test.ts), Dockerfile
 ├── infra/postgres/init/      # first-boot script: per-service roles and databases
 ├── scripts/                  # dev runner, integration-test runner, smoke test
+│   └── ci/                   # CI helpers: toolchain check, JUnit unit-test runner, disposable PostgreSQL
+├── jenkins/                  # local Jenkins: controller + agent + DinD (docker-compose.yml, README)
 ├── docs/                     # PROJECT_PLAN, ARCHITECTURE, DECISIONS
-├── ansible/ kubernetes/ helm/ jenkins/ monitoring/ security/   # future phases (placeholders)
+├── ansible/ kubernetes/ helm/ monitoring/ security/   # future phases (placeholders)
+├── Jenkinsfile               # CI pipeline
 ├── docker-compose.yml
 ├── .env.example
 ├── eslint.config.mjs
@@ -253,6 +257,11 @@ unknown paths collapse into `route="unmatched"`.
 | `npm run test:integration` | Repository tests against real PostgreSQL (needs `docker compose up -d postgres --wait`) |
 | `npm run test:smoke` | End-to-end checks through the gateway against a running platform |
 | `npm run compose:validate` | `docker compose config --quiet` (needs `.env`) |
+| `npm run test:ci` | Unit/API tests with JUnit XML in `reports/junit/unit/` (used by Jenkins) |
+| `npm run test:integration:ci` | Integration tests against a disposable PostgreSQL container, JUnit XML in `reports/junit/integration/`. Needs Docker, not `.env`; never touches the Compose stack |
+| `npm run ci:toolchain` | Checks Node/npm against `engines`, plus git and Docker (first CI stage) |
+
+Continuous integration runs these same commands in Jenkins; see [jenkins/README.md](jenkins/README.md).
 
 ## 9. Logs and shutdown
 

@@ -9,7 +9,7 @@ Status legend: **Complete** · In progress · Pending
 | # | Phase | Status |
 | --- | --- | --- |
 | 1 | Foundation | **Complete** (2026-10-13) |
-| 2 | CI with Jenkins | Pending |
+| 2 | CI with Jenkins | **Complete** (2026-10-14); one-time UI setup and a public webhook endpoint remain manual |
 | 3 | CI quality and security | Pending |
 | 4 | Ansible automation | Pending |
 | 5 | Kubernetes | Pending |
@@ -81,16 +81,71 @@ in both services assert consistent labels.
 
 ---
 
-## Phase 2 - CI with Jenkins — Pending
+## Phase 2 - CI with Jenkins — **Complete**
 
-- Jenkins installation guidance (Jenkins in Docker with a dedicated agent, JCasC where practical)
-- GitHub webhook integration and multibranch pipeline
-- `Jenkinsfile`: `npm ci`, lint, type check, unit tests, build, integration tests against an ephemeral PostgreSQL
-- Test reports (JUnit) and coverage publishing; artifact handling and build retention
-- Docker image build validation for all three services
+Jenkins pipeline for every push: toolchain check, `npm ci`, lint, type check, unit/API tests, database
+integration tests against a disposable PostgreSQL, build. Local Jenkins controller and separate build agent.
+Guide: [jenkins/README.md](../jenkins/README.md). Decisions: D-015 to D-020 in [DECISIONS.md](DECISIONS.md).
+
+### Deliverables
+
+- [x] Root `Jenkinsfile` (declarative): stages Checkout, Verify Toolchain, Install Dependencies, Lint,
+      Type Check, Unit & API Tests, Integration Tests, Build. Options: 30 min timeout (10 min for install
+      and integration), timestamps, `disableConcurrentBuilds()`, build discarder, `githubPush()` trigger,
+      per-stage failure hints, workspace cleanup. No credentials.
+- [x] JUnit XML from Vitest's built-in reporter (`JUNIT_REPORTS_DIR`): `reports/junit/unit/<service>.xml`,
+      `reports/junit/integration/<service>.xml`. Published with `allowEmptyResults: false`. Runners fail on missing reports
+- [x] `npm run test:ci` (all suites run even after a failure, then reports are verified)
+- [x] `npm run test:integration:ci`: disposable PostgreSQL per run (same image and init script as Compose,
+      tmpfs data, random port, random passwords passed via env), cleanup on success, failure and abort plus a
+      label-scoped `post { always }` backstop
+- [x] `npm run ci:toolchain`: Node/npm checked against `engines`, git and Docker client/daemon present
+- [x] `jenkins/docker-compose.yml` (project `dpp-jenkins`): controller (Jenkins 2.580.1 LTS, JDK 21, 0 executors),
+      inbound agent `ci-agent-1` (Node 24.16.0, npm 11.13.0, Docker CLI 29.9.0, WebSocket), Docker-in-Docker sidecar;
+      UI on `127.0.0.1:8090`; persistent volumes; health checks; resource limits
+- [x] 75 plugins pinned in `jenkins/controller/plugins.txt`; JCasC for the agent node, executors and URL
+- [x] Agent secret via git-ignored Compose secret file; admin created in the setup wizard (no credentials in git)
+- [x] GitHub webhook documentation (endpoint, settings, shared secret, testing, diagnosis, localhost limitation)
+- [x] Build artifacts (`services/*/dist/**`) archived and fingerprinted; build retention (30 builds, 10 with artifacts)
+
+### Verification results (2026-10-14, Windows 11, Docker Desktop 29.2.1 / Compose v5.0.2)
+
+| Check | Command / method | Result |
+| --- | --- | --- |
+| Lint, type check, unit tests, build | `npm run validate` | Pass (68 unit/API tests) |
+| Unit tests with JUnit | `npm run test:ci` | Pass; 3 reports, e.g. `<testsuites name="api-gateway unit" tests="14" failures="0">` |
+| Integration tests, disposable DB (host Docker) | `npm run test:integration:ci` | Pass: 8 tests; container on random `127.0.0.1` port, removed afterwards |
+| Integration tests, Compose DB (unchanged mode) | `npm run test:integration` | Pass: 8 tests |
+| Failure paths (local) | Temporarily broken unit and integration test | Exit 1; other suites still run; reports show `failures="1"`; DB container removed |
+| Compose validation | `docker compose config --quiet` (root and `jenkins/`) | Pass |
+| Jenkins images | `docker compose build` in `jenkins/` | Built with the pinned plugins |
+| Jenkinsfile syntax | Jenkins declarative linter on the controller | `Jenkinsfile successfully validated.` |
+| Controller | `docker compose up -d --wait controller dind` | Healthy on 127.0.0.1:8090; JCasC applied; setup wizard waiting for the owner |
+| Agent + full pipeline in Jenkins | Throwaway instance (separate Compose project/volumes, local snapshot of the working tree, temporary admin) | Agent connected over WebSocket. Build #1 and #5 SUCCESS: all 8 stages, 76 tests in the Tests tab, 56 artifacts. Integration DB ran in DinD (`docker:<port>`) |
+| Failure handling in Jenkins | Builds #2 (broken unit test), #3 (broken integration test), #4 (aborted during integration tests) | FAILURE, FAILURE, ABORTED; reports published; later stages skipped; 0 containers left in DinD |
+| Secrets in build logs | Search of all 5 console logs | No passwords |
+| Development stack untouched | `docker ps -a` / `docker volume ls` before and after | All app containers still up; dev volume intact; nothing removed |
+| Webhook endpoint | GitHub-style `ping` POST to `/github-webhook/` | HTTP 200 |
+| Phase 1 regression | `npm run test:smoke` on the running Compose stack | 17/17 |
+
+The throwaway verification instance was removed afterwards (`docker compose -p dpp-jenkins-verify down -v`,
+which only affects that project).
+
+### Not verified / manual steps remaining
+
+- **Real GitHub webhook delivery:** impossible while Jenkins is reachable only on `localhost`; needs a public
+  HTTPS endpoint (documented, intentionally not created).
+- **Owner's instance:** setup wizard, agent secret and job creation are one-time UI steps (jenkins/README.md, sections 3-5).
+  The pipeline will find the Jenkinsfile on GitHub only after the Phase 2 changes are committed and pushed.
+
+### Moved to Phase 3
+
+- Coverage publishing (consumed by the SonarQube quality gate) and Docker image build validation (built,
+  scanned and tagged there). See "Roadmap changes" in DECISIONS.md.
 
 ## Phase 3 - CI quality and security — Pending
 
+- Docker image builds for all three services in the pipeline; test coverage reports for SonarQube (moved from Phase 2)
 - SonarQube server and quality gate enforced in the pipeline
 - Trivy scanning of images and filesystem (dependencies, misconfigurations, secrets); fail on HIGH/CRITICAL
 - Secure image builds: digest-pinned base images, SBOM generation

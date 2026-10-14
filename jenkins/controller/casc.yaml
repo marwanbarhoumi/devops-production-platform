@@ -1,0 +1,24 @@
+# Jenkins Configuration as Code (JCasC), applied at every controller start.
+# Security (admin user, authorization) is intentionally NOT configured here: it is created through the
+# setup wizard so no credentials ever live in this repository. See jenkins/README.md.
+jenkins:
+  systemMessage: "devops-production-platform CI (local). Node and agent configuration: jenkins/controller/casc.yaml"
+  # Never run builds on the controller.
+  numExecutors: 0
+  nodes:
+    - permanent:
+        name: "ci-agent-1"
+        nodeDescription: "Docker build agent: Node.js 24, npm, git, Docker CLI (jenkins/agent/Dockerfile)"
+        # Must match the Jenkinsfile: agent { label 'linux && nodejs24 && docker' }
+        labelString: "linux nodejs24 docker"
+        remoteFS: "/home/jenkins/agent"
+        numExecutors: 1
+        mode: NORMAL
+        launcher:
+          inbound:
+            webSocket: true
+        retentionStrategy: "always"
+
+unclassified:
+  location:
+    url: "${JENKINS_URL:-http://localhost:8090/}"
