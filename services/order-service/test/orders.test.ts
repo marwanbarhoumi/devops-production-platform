@@ -141,6 +141,9 @@ describe('loadConfig', () => {
 
   it('normalises the product-service URL', () => {
     expect(loadConfig(env).PRODUCT_SERVICE_URL).toBe('http://product-service:7001');
+    expect(loadConfig({ ...env, PRODUCT_SERVICE_URL: 'http://product-service:7001/api///' }).PRODUCT_SERVICE_URL).toBe(
+      'http://product-service:7001/api',
+    );
   });
 
   it('rejects a missing or invalid product-service URL', () => {

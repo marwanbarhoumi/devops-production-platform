@@ -1,7 +1,14 @@
 import { z } from 'zod';
 
 const port = z.coerce.number().int().min(1).max(65535);
-const httpUrl = z.url({ protocol: /^https?$/ }).transform((url) => url.replace(/\/+$/, ''));
+const httpUrl = z.url({ protocol: /^https?$/ }).transform(trimTrailingSlashes);
+
+/** Linear-time equivalent of url.replace(/\/+$/, '') (the regex backtracks on long runs of "/"). */
+function trimTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === '/') end -= 1;
+  return url.slice(0, end);
+}
 
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),

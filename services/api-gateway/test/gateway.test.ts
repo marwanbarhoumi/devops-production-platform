@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
+import { ConfigError, loadConfig } from '../src/config.js';
 import { createLogger } from '../src/logger.js';
 import { createMetrics } from '../src/metrics.js';
 
@@ -225,5 +226,19 @@ describe('health and readiness', () => {
       status: 'not_ready',
       checks: { 'product-service': 'ok', 'order-service': 'unavailable' },
     });
+  });
+});
+
+describe('loadConfig', () => {
+  const env = { PRODUCT_SERVICE_URL: 'http://product-service:7001/', ORDER_SERVICE_URL: 'https://orders.example//' };
+
+  it('removes trailing slashes from upstream URLs', () => {
+    const config = loadConfig(env);
+    expect(config.PRODUCT_SERVICE_URL).toBe('http://product-service:7001');
+    expect(config.ORDER_SERVICE_URL).toBe('https://orders.example');
+  });
+
+  it('rejects non-HTTP upstream URLs', () => {
+    expect(() => loadConfig({ ...env, ORDER_SERVICE_URL: 'ftp://orders' })).toThrow(ConfigError);
   });
 });
