@@ -99,26 +99,47 @@ change them there, not in the UI.
 
 ## 4. Connect the build agent (once)
 
-1. In Jenkins: **Manage Jenkins → Nodes → ci-agent-1**. The page shows "Run from agent command line"
-   with a 64-character hexadecimal **secret** (`-secret <hex>`).
-2. Save only the secret, without a newline, to the git-ignored file `jenkins/secrets/agent-secret`:
+The agent needs the secret of node `ci-agent-1` in the git-ignored file `jenkins/secrets/agent-secret`
+(only the 64 hexadecimal characters). Never paste it into chats, screenshots or tracked files. Pick one
+way to create the file, running from the `jenkins/` directory:
 
-   ```powershell
-   # still in the jenkins/ directory
-   New-Item -ItemType Directory -Force secrets | Out-Null
-   Set-Content -NoNewline -Path secrets\agent-secret -Value '<paste-the-64-hex-secret>'
-   git check-ignore -v secrets/agent-secret     # must print a matching .gitignore rule
-   ```
+**A. Rotate and save (recommended; no Jenkins login needed, restarts the controller once)**
 
-3. Start the agent and check it:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\rotate-agent-secret.ps1
+```
 
-   ```powershell
-   docker compose up -d --build agent
-   docker compose logs agent | Select-String "Connected"
-   ```
+This generates a **new** agent key, so any previously seen secret stops working. It writes the new
+secret to the file without displaying it and recreates the agent. Users, jobs, build history and
+plugins are kept. If a step fails, the previous key is restored. Use it whenever the secret may have
+been exposed.
 
-   `ci-agent-1` turns online under **Manage Jenkins → Nodes**. The secret reaches the container as a
-   Compose secret (`/run/secrets/jenkins_agent_secret`), never as an environment variable.
+**B. Fetch the current secret with your Jenkins login (no restart)**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\save-agent-secret.ps1
+docker compose up -d agent
+```
+
+It prompts for your Jenkins username and an API token (your name → Security → API Token) or password,
+with hidden input, and sends them only to `http://localhost:8090`.
+
+**C. By hand:** copy the secret shown under **Manage Jenkins → Nodes → ci-agent-1** ("Run from agent
+command line", the value after `-secret`), then
+`Set-Content -NoNewline -Path secrets\agent-secret -Value '<secret>'` and `docker compose up -d agent`.
+
+Then check:
+
+```powershell
+git check-ignore -v secrets/agent-secret     # must print a matching .gitignore rule
+docker compose logs agent | Select-String "Connected"
+```
+
+`ci-agent-1` turns online under **Manage Jenkins → Nodes**. The file is mounted as a Compose secret
+(`/run/secrets/jenkins_agent_secret`). [`agent/entrypoint.sh`](agent/entrypoint.sh) checks that it
+holds exactly one 64-character hexadecimal value, and stops with a clear error if it is missing, empty
+or malformed. It then starts `agent.jar` with `-secret @/run/secrets/jenkins_agent_secret`, so the
+secret itself never appears in an environment variable or the process list.
 
 ## 5. Create the pipeline job
 
@@ -283,7 +304,9 @@ development database volume.
 | --- | --- |
 | `ports are not available ... 8090` | Another program uses the port: copy `.env.example` to `.env` and set `JENKINS_HTTP_PORT` and `JENKINS_URL` |
 | `secret file ... agent-secret` not found when starting the agent | Do step 4 first; the file must be `jenkins/secrets/agent-secret` |
-| Agent log: `401`/`403`, or `is already connected`/`Unknown client name` | Wrong or stale secret (for example after `down -v`): copy it again from the node page, then `docker compose up -d --force-recreate agent` |
+| Agent log: `ERROR: agent secret file is empty` / `is malformed`, agent keeps restarting | The file has no valid secret (empty, quotes, `-secret` prefix, or UTF-16 from `Out-File`). Recreate it with `rotate-agent-secret.ps1` or `save-agent-secret.ps1` (step 4) |
+| Agent prints the `java -jar agent.jar [options...]` help and `Two arguments required` | Agent image older than the entrypoint check, with an empty secret file: Remoting replaced `@file` with nothing, which shifted the arguments. `docker compose build agent`, fix the file (step 4), then `docker compose up -d agent` |
+| Agent log: `401`/`403`, or `is already connected`/`Unknown client name` | Wrong or stale secret (for example after `down -v` or a rotation): run `save-agent-secret.ps1` again (or `rotate-agent-secret.ps1`), then `docker compose up -d --force-recreate agent` |
 | Agent log: connection refused / `UnknownHost controller` | Controller not healthy yet: `docker compose ps`, `docker compose logs controller` |
 | Build waits with "Waiting for next available executor on 'linux && nodejs24 && docker'" | Agent offline, or its labels changed: check **Nodes**; labels come from `casc.yaml` |
 | Verify Toolchain: `node ... does not satisfy` | Agent image is outdated: `docker compose build --pull agent; docker compose up -d agent` |

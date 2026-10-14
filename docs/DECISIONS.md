@@ -136,9 +136,10 @@ WebSocket removes the need for the inbound TCP port 50000; only the web UI is pu
 An inbound agent avoids giving the controller SSH keys to the agent.
 
 **Trade-off:** registering the agent needs its secret, which Jenkins generates only once security is
-set up. That makes one manual step after the setup wizard (copy the secret to the git-ignored
-`jenkins/secrets/agent-secret`). An SSH or cloud (Docker plugin) agent could remove that step at the
-cost of more credentials and plugins.
+set up. `jenkins/rotate-agent-secret.ps1` (no login; rotates the key) or `jenkins/save-agent-secret.ps1`
+(with a login) write it to the git-ignored `jenkins/secrets/agent-secret`. Manual copying produced an
+empty file in practice, so the agent entrypoint now validates the file. An SSH or cloud (Docker plugin)
+agent could remove that step at the cost of more credentials and plugins.
 
 ## D-016 Docker-in-Docker for pipeline containers instead of the host Docker socket
 

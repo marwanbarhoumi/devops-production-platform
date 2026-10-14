@@ -18,5 +18,8 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 RUN node --version && npm --version && docker --version && git --version
+COPY --chmod=0755 entrypoint.sh /usr/local/bin/dpp-agent-entrypoint
 
 USER jenkins
+# Checks the secret file, then execs the base image's /usr/local/bin/jenkins-agent.
+ENTRYPOINT ["/usr/local/bin/dpp-agent-entrypoint"]

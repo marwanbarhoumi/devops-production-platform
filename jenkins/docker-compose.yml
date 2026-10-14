@@ -84,8 +84,8 @@ services:
       JENKINS_AGENT_NAME: ci-agent-1
       JENKINS_WEB_SOCKET: "true"
       JENKINS_AGENT_WORKDIR: /home/jenkins/agent
-      # agent.jar reads the secret from the file when the value starts with "@".
-      JENKINS_SECRET: "@/run/secrets/jenkins_agent_secret"
+      # Validated by agent/entrypoint.sh and passed to agent.jar as "-secret @<file>" (never as a value).
+      JENKINS_SECRET_FILE: /run/secrets/jenkins_agent_secret
       DOCKER_HOST: tcp://docker:2376
       DOCKER_TLS_VERIFY: "1"
       DOCKER_CERT_PATH: /certs/client
