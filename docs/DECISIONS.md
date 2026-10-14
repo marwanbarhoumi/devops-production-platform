@@ -264,6 +264,69 @@ credential the stage is skipped with an explicit message.
 next to the source repository and needs no extra account. The pipeline stays green and useful before a
 registry token exists, and the token never persists on the agent.
 
+## D-026 Ansible runs in a container, not on Windows
+
+**Decision:** the Ansible controller is a local image (`ansible/Dockerfile`: digest-pinned Python 3.13, ansible-core
+2.21.5, ansible-lint 26.10.1, all Python dependencies pinned in `requirements.txt`) run through `ansible.ps1`
+as the Compose project `dpp-ansible`. The container runs as a non-root user with a read-only root filesystem,
+no capabilities and no Docker socket. SSH keys are read at run time from git-ignored `ansible/.ssh/` and copied
+into a tmpfs with mode 600; `ANSIBLE_CONFIG` points to `/ansible/ansible.cfg`.
+
+**Why:** Ansible does not run natively on Windows, and a pinned image gives every run (and later Jenkins) the
+same versions. Keys cannot be baked into the image, and the copy is needed because Windows bind mounts show
+every file as 0777, which OpenSSH rejects for private keys and which makes Ansible ignore a config file in the
+working directory.
+
+**Trade-off:** no SSH agent in the container, so automation keys cannot have a passphrase; they are dedicated
+keys, separate for production. A password file for Vault would also appear executable; `--ask-vault-pass` is
+documented instead.
+
+## D-027 Guard rails before any connection
+
+**Decision:** `ansible.cfg` has no default inventory and enforces `StrictHostKeyChecking=yes` with a project
+`known_hosts` file. Example inventories use the reserved `.invalid` domain and are copied to git-ignored
+`*.ini` files. Every playbook first runs `playbooks/tasks/preflight.yml` with `gather_facts: false`: it requires
+`deployment_environment` (test, dev or prod), refuses `.invalid`/placeholder addresses and non-SSH connections
+(`local`, `docker`, `winrm`, `psrp`), and refuses changes to prod hosts without `-e confirm_production=true`
+(check mode is allowed).
+
+**Why:** the dangerous mistakes are running against the wrong machine (including the Windows host) or against
+production by accident; both are stopped before Ansible opens a connection. Host keys are added only after an
+out-of-band fingerprint check, so a changed key stops the run instead of being trusted silently.
+
+## D-028 Docker Engine from Docker's repository, verified, with no implicit docker group members
+
+**Decision:** the `docker_engine` role installs Docker CE, containerd, Buildx and Compose from Docker's apt
+repository (deb822 `docker.sources`, `Signed-By` a key in `/etc/apt/keyrings`). The downloaded key must match the
+pinned fingerprint `9DC858229FC7DD38854AE2D88D81803C0EBFCD88` before the repository is added. Distribution
+Docker packages stop the run unless their removal is explicitly allowed. `docker_engine_users` is empty by
+default, the role never creates users, and listed users must already exist. Packages use `state: present`;
+an optional exact version can be pinned.
+
+**Why:** Docker's repository is the supported source for current Engine and Compose v2 versions; verifying the
+fingerprint protects against a substituted key. Docker group membership is root-equivalent, so it is only ever
+granted on purpose. Upgrades are deliberate operations, not side effects of a configuration run.
+
+**Common role scope:** packages, unattended security upgrades and the keyrings directory only. SSH, firewall,
+network and user hardening are left for Phase 9, where they can be designed and tested without the risk of
+locking an administrator out of a server.
+
+## D-029 Local test target: a systemd Ubuntu container reached over SSH
+
+**Decision:** `ansible/test/` builds a disposable Ubuntu 24.04 container running systemd and OpenSSH (key-only,
+an `automation` user with passwordless sudo, keys from a Docker volume generated per run) and runs the real
+playbooks against it over SSH from the controller: lint, syntax, safety refusals, check mode, apply, a second run
+and check mode with `changed=0`, and `docker run hello-world` inside the target. Everything is removed
+afterwards.
+
+**Why:** no VM was available, and Ansible's SSH path, `sudo`, apt, systemd and the Docker daemon can all be
+exercised realistically this way, on any machine with Docker Desktop. The target is privileged (systemd and a
+nested Docker Engine need it) and gets volumes for `/var/lib/docker` and `/var/lib/containerd`, because
+overlayfs cannot be stacked on the container's own overlay root.
+
+**Trade-off:** a container is not a VM: kernel, boot, cloud-init, firewall and real network behaviour are not
+tested. The first run against a real server must start with `--check --diff`.
+
 ## Roadmap changes
 
 Any change to [PROJECT_PLAN.md](PROJECT_PLAN.md) phases is recorded here.
@@ -272,3 +335,7 @@ Any change to [PROJECT_PLAN.md](PROJECT_PLAN.md) phases is recorded here.
   Coverage is mainly an input to the SonarQube quality gate, and image builds belong with Trivy scanning,
   tagging and registry publishing. Phase 2 focuses on the pipeline, test reporting and the Jenkins platform.
   The DevOps-first order of the roadmap is unchanged.
+- **2026-10-14:** Phase 4 delivers the `common` and `docker_engine` roles with a local end-to-end test. The
+  Jenkins agent role moves to Phase 7, which decides how deployments reach servers, and Kubernetes node
+  prerequisites move to Phase 5, where the cluster type (local or kubeadm) is chosen. Server hardening
+  (SSH, firewall) moves to Phase 9 (D-028). Ansible Vault is documented as a pattern; no role needs a secret yet.

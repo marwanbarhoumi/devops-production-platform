@@ -1,0 +1,24 @@
+---
+# Ubuntu LTS releases this role is tested for (ansible_facts['distribution_version']).
+common_supported_ubuntu_versions:
+  - "22.04"
+  - "24.04"
+  - "26.04"
+
+# The apt index is refreshed only when older than this (seconds), so repeated runs stay fast.
+common_apt_cache_valid_time: 3600
+
+# Small administrative toolset. Extend per host or group with common_extra_packages.
+common_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - jq
+  - htop
+  - unzip
+  - tzdata
+common_extra_packages: []
+
+# Automatic installation of security updates (unattended-upgrades, Ubuntu's own mechanism).
+# Only the periodic switches are managed; reboots stay a manual decision.
+common_unattended_upgrades_enabled: true

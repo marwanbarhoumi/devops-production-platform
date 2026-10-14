@@ -1,0 +1,20 @@
+# Development inventory template.
+#   Copy-Item ansible/inventory/dev.ini.example ansible/inventory/dev.ini   (dev.ini is git-ignored)
+# Then replace every placeholder. Hosts ending in .invalid can never resolve (RFC 2606), and the
+# playbooks refuse to run against them, so an unedited copy cannot reach any machine.
+#
+# ansible_host                  IP address or DNS name of the server
+# ansible_user                  the automation user prepared on the server (README "Prepare a target")
+# ansible_ssh_private_key_file  key inside the container: /home/ansible/.ssh/<file name in ansible/.ssh/>
+
+[dev]
+dev-app-1 ansible_host=dev-app-1.example.invalid
+
+[dev:vars]
+deployment_environment=dev
+ansible_user=automation
+ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519_dpp
+
+# All playbooks target the "managed" group.
+[managed:children]
+dev

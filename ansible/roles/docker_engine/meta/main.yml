@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: docker_engine
+  namespace: dpp
+  author: marwanbarhoumi
+  description: Docker Engine and the Compose plugin from Docker's official apt repository, with a verified signing key.
+  license: proprietary
+  min_ansible_version: "2.17"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+        - resolute
+dependencies: []

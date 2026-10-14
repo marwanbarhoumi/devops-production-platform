@@ -1,0 +1,84 @@
+---
+- name: Check that the target runs a supported Ubuntu release
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_version'] in common_supported_ubuntu_versions
+    fail_msg: >-
+      {{ inventory_hostname }} runs {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }};
+      this role supports Ubuntu {{ common_supported_ubuntu_versions | join(', ') }}.
+    quiet: true
+
+- name: Validate role variables
+  ansible.builtin.assert:
+    that:
+      - common_packages is sequence and common_packages is not string
+      - common_extra_packages is sequence and common_extra_packages is not string
+      - common_apt_cache_valid_time | int >= 0
+    fail_msg: common_packages and common_extra_packages must be lists; common_apt_cache_valid_time a number of seconds.
+    quiet: true
+
+- name: Check for the Python libraries used by Ansible's apt modules
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_facts['python']['executable'] }}"
+      - -c
+      - import apt, debian
+  register: common_apt_python_libs
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Stop check mode on hosts without python3-apt and python3-debian
+  ansible.builtin.assert:
+    that: common_apt_python_libs.rc == 0
+    fail_msg: >-
+      Check mode needs python3-apt and python3-debian on {{ inventory_hostname }}. Run the playbook once without
+      --check, or install them on the host: sudo apt-get install python3-apt python3-debian
+    quiet: true
+  when: ansible_check_mode
+
+- name: Install python3-apt and python3-debian
+  ansible.builtin.apt:
+    name: [python3-apt, python3-debian]
+    state: present
+    update_cache: true
+  when: common_apt_python_libs.rc != 0
+
+- name: Refresh the apt package index when it is older than common_apt_cache_valid_time
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: "{{ common_apt_cache_valid_time }}"
+  # Refreshing the index changes no configuration; reporting it would break the idempotency check.
+  changed_when: false
+
+- name: Install administrative packages
+  ansible.builtin.apt:
+    name: "{{ common_packages + common_extra_packages + (['unattended-upgrades'] if common_unattended_upgrades_enabled else []) }}"
+    state: present
+
+- name: Ensure the directory for third-party apt signing keys exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure the periodic apt and unattended-upgrades switches
+  ansible.builtin.template:
+    src: 20auto-upgrades.j2
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart unattended-upgrades
+
+- name: Report system details
+  ansible.builtin.debug:
+    msg:
+      - >-
+        {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}
+        ({{ ansible_facts['distribution_release'] }}), kernel {{ ansible_facts['kernel'] }}
+      - "{{ ansible_facts['architecture'] }}, {{ ansible_facts['processor_vcpus'] }} vCPU, {{ ansible_facts['memtotal_mb'] }} MB RAM"
+      - "Python {{ ansible_facts['python_version'] }}, environment {{ deployment_environment | default('unset') }}"

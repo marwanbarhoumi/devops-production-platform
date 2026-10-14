@@ -11,7 +11,7 @@ Status legend: **Complete** · In progress · Pending
 | 1 | Foundation | **Complete** (2026-10-13) |
 | 2 | CI with Jenkins | **Complete** (2026-10-14); one-time UI setup and a public webhook endpoint remain manual |
 | 3 | CI quality and security | **Complete** (2026-10-14); registry push needs the owner's GHCR token |
-| 4 | Ansible automation | Pending |
+| 4 | Ansible automation | **Complete** (2026-10-14) for the local scope; a real VM still needs a host and SSH credentials |
 | 5 | Kubernetes | Pending |
 | 6 | Helm | Pending |
 | 7 | Continuous deployment | Pending |
@@ -191,12 +191,63 @@ Guide: [security/README.md](../security/README.md). Decisions: D-021 to D-025 in
 - The controller Dockerfile's explicit `USER jenkins` (Trivy DS-0002) takes effect at the next controller
   image rebuild; it does not change behaviour (the base image already runs as `jenkins`).
 
-## Phase 4 - Ansible automation — Pending
+## Phase 4 - Ansible automation — **Complete**
 
-- Inventory (local VMs or cloud hosts) and group variables
-- Reusable roles: common hardening, Docker, Jenkins agent, Kubernetes node prerequisites
-- Playbooks for provisioning the CI and runtime hosts; idempotency verified by a second run reporting no changes
-- Secrets handled with Ansible Vault
+Reusable automation that prepares Ubuntu servers to run the platform's containers. Guide:
+[ansible/README.md](../ansible/README.md). Decisions: D-026 to D-029 in [DECISIONS.md](DECISIONS.md).
+
+### Deliverables
+
+- [x] Containerized controller (`ansible/Dockerfile`, Compose project `dpp-ansible`): digest-pinned Python 3.13,
+      ansible-core 2.21.5, ansible-lint 26.10.1, 29 pinned Python packages; non-root, read-only, no capabilities,
+      no Docker socket; PowerShell wrapper `ansible.ps1`
+- [x] `ansible.cfg`: no default inventory, strict host key checking with a project `known_hosts`, key-only SSH,
+      `become` off by default (playbooks opt in), pipelining
+- [x] Inventories: `dev.ini.example`, `prod.ini.example` (unresolvable `.invalid` placeholders, git-ignored copies),
+      `local-test.ini`; `group_vars/all.yml` and an `.example` of overrides
+- [x] Playbooks `site.yml`, `common.yml`, `docker.yml` with a shared preflight: environment check, placeholder and
+      non-SSH targets refused before connecting, prod changes need `-e confirm_production=true`
+- [x] Role `common`: supported Ubuntu check (22.04/24.04/26.04), apt Python libraries, admin packages, keyrings
+      directory, unattended security upgrades (template + handler)
+- [x] Role `docker_engine`: conflict check, Docker key fingerprint verification, deb822 repository, Engine +
+      containerd + Buildx + Compose, optional version pin, validated `daemon.json` with log rotation, services,
+      opt-in docker group membership for existing users only (handler restarts Docker)
+- [x] Target preparation, SSH key, host key verification, privilege escalation, Vault pattern, docker group risk,
+      troubleshooting (ansible/README.md)
+- [x] Local end-to-end test (`ansible/test/run-local-test.ps1`) against a disposable systemd Ubuntu 24.04 container
+- [ ] Run against a real server (needs a target host and SSH credentials from the owner)
+
+### Verification (2026-10-14, Windows 11, Docker Desktop 29.2.1 / Compose v5.0.2)
+
+| Check | Command / method | Result |
+| --- | --- | --- |
+| Controller image | `.\ansible\ansible.ps1 -Build`, `.\ansible\ansible.ps1` | Built; `ansible [core 2.21.5]`, `pip check` clean |
+| Lint | `.\ansible\ansible.ps1 ansible-lint` | Passed, profile `production`: 0 failures, 0 warnings |
+| Syntax and inventories | `--syntax-check` (3 playbooks); `ansible-inventory --graph` and `--list-hosts` for all 3 inventories | Pass; `managed` resolves to the expected single host in each |
+| Compose | `docker compose -f ansible/docker-compose.yml config --quiet` (default and `--profile test`) | Pass |
+| Placeholder safety | `site.yml --check` with `dev.ini.example` | Refused by the preflight, exit 2, no connection attempt |
+| Host key workflow | `ssh-keyscan` + `ssh-keygen -lf` through `ansible.ps1` (github.com as a public stand-in) | Fingerprint matches the published one; `ansible/.ssh/` is git-ignored |
+| End-to-end on the test target | `.\ansible\test\run-local-test.ps1` | **PASSED**: ping and sudo; placeholder and unconfirmed prod refused; check mode on the minimal target refused with the `python3-apt` message; `common.yml` applied (changed=4); `site.yml --check` changed nothing (Docker absent afterwards); `site.yml` applied (changed=7, Docker 29.9.0, Compose 5.6.0); second run **changed=0**; check mode after apply **changed=0** (also as unconfirmed prod); docker and containerd active and enabled; `docker run hello-world` OK; target and test volumes removed |
+| Other stacks untouched | `docker ps -a` before and after | Application, Jenkins and SonarQube containers kept running with unchanged uptime; no volume removed |
+
+**Issues found and fixed by the test:**
+
+- On a minimal Ubuntu image, Ansible's apt modules fail in check mode without `python3-apt`. Both roles now
+  install `python3-apt` and `python3-debian` on a normal run and stop check mode with a clear message instead.
+- The test target's sshd did not start: masking `ssh.socket` also blocks `ssh.service` on Ubuntu 24.04. The
+  target now uses Ubuntu's default socket activation.
+- Docker 29 stores images through containerd; in the nested test target `/var/lib/containerd` needs its own volume.
+
+### Not verified / remaining
+
+- **A real VM:** no target host or credentials were provided. The playbooks have not configured any real
+  machine; the first real run should be `--check --diff` (ansible/README.md, sections 4-6).
+- Ubuntu 22.04/26.04, arm64, sudo with a password (`-K`), Ansible Vault (pattern only).
+
+### Moved to later phases
+
+Jenkins agent role (Phase 7), Kubernetes node prerequisites (Phase 5), SSH/firewall hardening (Phase 9). See
+"Roadmap changes" in DECISIONS.md.
 
 ## Phase 5 - Kubernetes — Pending
 
@@ -205,6 +256,7 @@ Guide: [security/README.md](../security/README.md). Decisions: D-021 to D-025 in
 - Resource requests and limits; HorizontalPodAutoscaler
 - PostgreSQL StatefulSet with PersistentVolumeClaim (or an external database), migration strategy
 - Ingress for the gateway; RBAC and service accounts
+- Ansible role for Kubernetes node prerequisites, if the chosen cluster runs on managed servers (from Phase 4)
 
 ## Phase 6 - Helm — Pending
 
@@ -217,6 +269,7 @@ Guide: [security/README.md](../security/README.md). Decisions: D-021 to D-025 in
 - Jenkins deployment pipeline with staged promotion (dev → staging → production approval)
 - Immutable image versioning; deployment verification using readiness and smoke tests
 - Rolling update strategy and automated rollback (`helm rollback`) on failed verification
+- Ansible role for a Jenkins agent on a managed server, if deployments need one (from Phase 4)
 
 ## Phase 8 - Monitoring and alerting — Pending
 
@@ -230,6 +283,7 @@ Guide: [security/README.md](../security/README.md). Decisions: D-021 to D-025 in
 - NetworkPolicies (only the gateway reachable from ingress; services reachable only by their callers)
 - Pod security standards, resource quotas and limit ranges
 - Database backup/restore and disaster-recovery considerations; authentication and rate limiting at the edge
+- Server hardening with Ansible: SSH daemon settings, firewall, users (from Phase 4)
 
 ## Phase 10 - Portfolio completion — Pending
 

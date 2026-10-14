@@ -1,0 +1,16 @@
+---
+# Settings shared by every inventory in this directory (dev, prod, local test). Non-secret values only.
+# Role defaults: roles/*/defaults/main.yml. Override per environment in group_vars/<group>.yml
+# (e.g. group_vars/prod.yml) or per host in the inventory.
+#
+# Secrets, if a role ever needs one, go into an Ansible Vault file such as group_vars/prod/vault.yml,
+# encrypted with a password file kept outside the repository (README "Secrets").
+
+# common role
+common_extra_packages: []
+common_unattended_upgrades_enabled: true
+
+# docker_engine role
+docker_engine_version: ""
+# Grants root-equivalent access; list only existing, trusted admin accounts (README "Docker group").
+docker_engine_users: []

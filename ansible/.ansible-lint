@@ -1,0 +1,9 @@
+# ansible-lint settings (run: .\ansible\ansible.ps1 ansible-lint)
+profile: production
+exclude_paths:
+  - .ssh/
+  - test/target/
+  # Compose file, validated by `docker compose config`; its YAML merge overrides trip Ansible's loader.
+  - docker-compose.yml
+# Roles are used from this repository, not installed from Galaxy.
+offline: true

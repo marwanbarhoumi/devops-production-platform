@@ -1,0 +1,4 @@
+# Direct dependencies of the Ansible controller image. requirements.txt pins these and every
+# transitive dependency (regenerate: see README "Upgrading the tools").
+ansible-core==2.21.5
+ansible-lint==26.10.1

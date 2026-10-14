@@ -159,3 +159,18 @@ as its own Compose project (`security/sonarqube`, `dpp-sonarqube`, 127.0.0.1:910
 PostgreSQL; the agent reaches it through `host.docker.internal`. Images are built and scanned on the
 DinD daemon, so CI images never appear on the host daemon. Details:
 [security/README.md](../security/README.md); rationale: DECISIONS D-021 to D-025.
+
+## Server automation (Ansible)
+
+```text
+ansible.ps1 ──► controller container (dpp-ansible) ──SSH, key + verified host key──► Ubuntu server
+                ansible-core, roles, inventory          sudo as "automation"        common, docker_engine
+```
+
+The controller is a short-lived container with the repository's `ansible/` directory mounted; it has no Docker
+socket and no published ports. Inventories select servers by group `managed`; every playbook runs a preflight
+that refuses placeholder addresses, non-SSH connections and unconfirmed production changes before connecting.
+The roles prepare a server to run containers (baseline packages, unattended security updates, Docker Engine
+and Compose from Docker's verified repository). They will provide the hosts for later phases. The local test
+target (`--profile test`) is a systemd Ubuntu container on the project's own network. Details:
+[ansible/README.md](../ansible/README.md); rationale: DECISIONS D-026 to D-029.

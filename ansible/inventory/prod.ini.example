@@ -1,0 +1,16 @@
+# Production inventory template.
+#   Copy-Item ansible/inventory/prod.ini.example ansible/inventory/prod.ini   (prod.ini is git-ignored)
+# Replace every placeholder. Changes are refused unless -e confirm_production=true is given;
+# always run with --check --diff first (allowed without it). Use a different key than for development.
+
+[prod]
+prod-app-1 ansible_host=prod-app-1.example.invalid
+# prod-app-2 ansible_host=prod-app-2.example.invalid
+
+[prod:vars]
+deployment_environment=prod
+ansible_user=automation
+ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519_dpp_prod
+
+[managed:children]
+prod

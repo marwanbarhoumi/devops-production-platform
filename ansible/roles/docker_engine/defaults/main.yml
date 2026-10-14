@@ -1,0 +1,57 @@
+---
+# Ubuntu releases served by Docker's apt repository that this role is tested for.
+docker_engine_supported_ubuntu_versions:
+  - "22.04"
+  - "24.04"
+  - "26.04"
+
+# Docker's official apt repository (https://docs.docker.com/engine/install/ubuntu/).
+docker_engine_repo_url: https://download.docker.com/linux/ubuntu
+docker_engine_repo_channel: stable
+docker_engine_gpg_key_url: https://download.docker.com/linux/ubuntu/gpg
+docker_engine_gpg_key_path: /etc/apt/keyrings/docker.asc
+# Fingerprint of Docker's release signing key, as published in Docker's install documentation.
+# The downloaded key must match it, otherwise the role stops before adding the repository.
+docker_engine_gpg_fingerprint: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+docker_engine_arch_map:
+  x86_64: amd64
+  aarch64: arm64
+  armv7l: armhf
+
+# Packages from Docker's repository (Engine, CLI, containerd, Buildx and Compose plugins).
+docker_engine_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+# Optional exact version of docker-ce and docker-ce-cli, e.g. "5:29.9.0-1~ubuntu.24.04~noble"
+# (list them with: apt-cache madison docker-ce). Empty: latest from the channel when first installed;
+# later runs never upgrade (state: present).
+docker_engine_version: ""
+
+# Distribution packages that conflict with Docker's packages. The role stops if any is installed,
+# unless removal is allowed explicitly (packages are removed, not purged; /var/lib/docker is kept).
+docker_engine_conflicting_packages:
+  - docker.io
+  - docker-doc
+  - docker-compose
+  - docker-compose-v2
+  - podman-docker
+  - containerd
+  - runc
+docker_engine_remove_conflicting_packages: false
+
+# Written to /etc/docker/daemon.json (validated with dockerd --validate). Empty dict: file not managed.
+docker_engine_daemon_options:
+  log-driver: json-file
+  log-opts:
+    max-size: 10m
+    max-file: "3"
+
+docker_engine_service_enabled: true
+docker_engine_service_state: started
+
+# Existing users to add to the "docker" group. Empty by default: docker group membership is equivalent
+# to root on the host. Users are never created by this role.
+docker_engine_users: []

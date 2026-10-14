@@ -1,0 +1,35 @@
+---
+# Safety checks run before any role, on every host of the play (imported by all playbooks).
+- name: Check the deployment environment of the host
+  ansible.builtin.assert:
+    that:
+      - deployment_environment is defined
+      - deployment_environment in ['test', 'dev', 'prod']
+    fail_msg: >-
+      {{ inventory_hostname }}: set deployment_environment to test, dev or prod in the inventory
+      (see inventory/*.ini.example).
+    quiet: true
+
+- name: Refuse placeholder or local targets
+  vars:
+    preflight_address: "{{ ansible_host | default(inventory_hostname) }}"
+  ansible.builtin.assert:
+    that:
+      # Example inventories use the reserved .invalid domain (RFC 2606), which can never resolve.
+      - preflight_address is not search('\.invalid$')
+      - preflight_address is not search('CHANGE_ME|<|>')
+      - ansible_connection | default('ssh') not in ['local', 'docker', 'winrm', 'psrp']
+    fail_msg: >-
+      {{ inventory_hostname }} ({{ preflight_address }}) is a placeholder or not an SSH target. Copy the example
+      inventory, replace the placeholders with your server's real address and user, and try again.
+    quiet: true
+
+- name: Require explicit confirmation for production hosts
+  ansible.builtin.assert:
+    that: confirm_production | default(false) | bool
+    fail_msg: >-
+      {{ inventory_hostname }} is a production host. Run with --check first, then add
+      -e confirm_production=true to apply changes.
+    quiet: true
+  # A --check run changes nothing, so it is allowed without confirmation.
+  when: deployment_environment == 'prod' and not ansible_check_mode

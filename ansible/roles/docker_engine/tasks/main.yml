@@ -1,0 +1,213 @@
+---
+- name: Check that the target runs a supported Ubuntu release and architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_version'] in docker_engine_supported_ubuntu_versions
+      - ansible_facts['architecture'] in docker_engine_arch_map
+    fail_msg: >-
+      {{ inventory_hostname }}: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}
+      ({{ ansible_facts['architecture'] }}) is not supported; supported: Ubuntu
+      {{ docker_engine_supported_ubuntu_versions | join(', ') }} on {{ docker_engine_arch_map.keys() | join(', ') }}.
+    quiet: true
+
+- name: Validate role variables
+  ansible.builtin.assert:
+    that:
+      - docker_engine_packages is sequence and docker_engine_packages is not string and docker_engine_packages | length > 0
+      - docker_engine_users is sequence and docker_engine_users is not string
+      - docker_engine_daemon_options is mapping
+      - docker_engine_gpg_fingerprint is match('^[0-9A-F]{40}$')
+      - docker_engine_service_state in ['started', 'stopped']
+    fail_msg: Invalid docker_engine_* variable; see roles/docker_engine/defaults/main.yml for the expected types.
+    quiet: true
+
+- name: Check for the Python libraries used by Ansible's apt modules
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_facts['python']['executable'] }}"
+      - -c
+      - import apt, debian
+  register: docker_engine_apt_python_libs
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Stop check mode on hosts without python3-apt and python3-debian
+  ansible.builtin.assert:
+    that: docker_engine_apt_python_libs.rc == 0
+    fail_msg: >-
+      Check mode needs python3-apt and python3-debian on {{ inventory_hostname }}. Run the playbook once without
+      --check, or install them on the host: sudo apt-get install python3-apt python3-debian
+    quiet: true
+  when: ansible_check_mode
+
+- name: Install python3-apt and python3-debian
+  ansible.builtin.apt:
+    name: [python3-apt, python3-debian]
+    state: present
+    update_cache: true
+  when: docker_engine_apt_python_libs.rc != 0
+
+- name: Gather the list of installed packages
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Stop when conflicting distribution packages are installed and removal is not allowed
+  vars:
+    docker_engine_conflicts_found: "{{ docker_engine_conflicting_packages | select('in', ansible_facts.packages) | list }}"
+  ansible.builtin.assert:
+    that: docker_engine_conflicts_found | length == 0 or docker_engine_remove_conflicting_packages | bool
+    fail_msg: >-
+      {{ inventory_hostname }} has {{ docker_engine_conflicts_found | join(', ') }} installed, which conflict with Docker's
+      packages. Remove them, or set docker_engine_remove_conflicting_packages=true to let the role remove them
+      (containers using them stop; /var/lib/docker is kept).
+    quiet: true
+
+- name: Remove conflicting distribution packages (only when explicitly allowed)
+  ansible.builtin.apt:
+    name: "{{ docker_engine_conflicting_packages | select('in', ansible_facts.packages) | list }}"
+    state: absent
+    purge: false
+  when:
+    - docker_engine_remove_conflicting_packages | bool
+    - docker_engine_conflicting_packages | select('in', ansible_facts.packages) | list | length > 0
+
+- name: Install repository prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - gnupg
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure the apt keyrings directory exists
+  ansible.builtin.file:
+    path: "{{ docker_engine_gpg_key_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Docker's repository signing key
+  ansible.builtin.get_url:
+    url: "{{ docker_engine_gpg_key_url }}"
+    dest: "{{ docker_engine_gpg_key_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: docker_engine_gpg_key
+
+- name: Read the fingerprint of the downloaded signing key
+  ansible.builtin.command:
+    argv: [gpg, --show-keys, --with-colons, --fingerprint, "{{ docker_engine_gpg_key_path }}"]
+  register: docker_engine_gpg_show
+  changed_when: false
+  check_mode: false
+  # In check mode a missing key is not downloaded, so there is nothing to read yet.
+  when: not (ansible_check_mode and docker_engine_gpg_key is changed)
+
+- name: Verify the signing key fingerprint
+  ansible.builtin.assert:
+    that: docker_engine_gpg_fingerprint in (docker_engine_gpg_show.stdout | regex_findall('(?m)^fpr:+([0-9A-F]{40}):'))
+    fail_msg: >-
+      {{ docker_engine_gpg_key_path }} does not contain the expected key {{ docker_engine_gpg_fingerprint }}.
+      The repository is not added. Check docker_engine_gpg_key_url and Docker's install documentation.
+    quiet: true
+  when: docker_engine_gpg_show is not skipped
+
+- name: Add Docker's apt repository (deb822 format, signed by the verified key only)
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: [deb]
+    uris: ["{{ docker_engine_repo_url }}"]
+    suites: ["{{ ansible_facts['distribution_release'] }}"]
+    components: ["{{ docker_engine_repo_channel }}"]
+    architectures: ["{{ docker_engine_arch_map[ansible_facts['architecture']] }}"]
+    signed_by: "{{ docker_engine_gpg_key_path }}"
+    state: present
+  register: docker_engine_repo
+
+- name: Refresh the apt index after the repository changed
+  ansible.builtin.apt:
+    update_cache: true
+  when: docker_engine_repo is changed and not ansible_check_mode
+
+- name: Install Docker Engine and plugins
+  ansible.builtin.apt:
+    name: >-
+      {{ docker_engine_packages
+         | map('regex_replace', '^(docker-ce|docker-ce-cli)$', '\1=' ~ docker_engine_version)
+         | list
+         if docker_engine_version | length > 0 else docker_engine_packages }}
+    state: present
+  # In check mode on a new host the repository is not really added, so its packages cannot be resolved.
+  when: not (ansible_check_mode and docker_engine_repo is changed)
+  notify: Restart docker
+
+- name: Write /etc/docker/daemon.json
+  ansible.builtin.copy:
+    content: "{{ docker_engine_daemon_options | to_nice_json(indent=2) }}\n"
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+    validate: dockerd --validate --config-file=%s
+  when:
+    - docker_engine_daemon_options | length > 0
+    - not (ansible_check_mode and docker_engine_repo is changed)
+  notify: Restart docker
+
+- name: Configure the Docker and containerd services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: "{{ docker_engine_service_enabled }}"
+    state: "{{ docker_engine_service_state }}"
+  loop: [containerd, docker]
+  when: not (ansible_check_mode and docker_engine_repo is changed)
+
+- name: Check that every user listed in docker_engine_users exists
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ item }}"
+  loop: "{{ docker_engine_users }}"
+
+- name: Add the listed users to the docker group (equivalent to root access)
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: [docker]
+    append: true
+  loop: "{{ docker_engine_users }}"
+  when: not (ansible_check_mode and docker_engine_repo is changed)
+
+- name: Apply pending Docker restarts before verifying
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the Docker Engine version
+  ansible.builtin.command:
+    argv: [docker, version, --format, json]
+  register: docker_engine_server_version
+  changed_when: false
+  check_mode: false
+  when:
+    - not ansible_check_mode
+    - docker_engine_service_state == 'started'
+
+- name: Read the Docker Compose plugin version
+  ansible.builtin.command:
+    argv: [docker, compose, version, --short]
+  register: docker_engine_compose_version
+  changed_when: false
+  check_mode: false
+  when:
+    - not ansible_check_mode
+    - "'docker-compose-plugin' in docker_engine_packages"
+
+- name: Report the installed versions
+  ansible.builtin.debug:
+    msg: >-
+      Docker Engine {{ (docker_engine_server_version.stdout | from_json).Server.Version
+                       if docker_engine_server_version.stdout is defined else 'n/a' }},
+      Compose {{ docker_engine_compose_version.stdout | default('n/a') }}
+  when: not ansible_check_mode

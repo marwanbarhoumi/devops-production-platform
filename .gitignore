@@ -37,6 +37,13 @@ docker-compose.override.yml
 compose.override.yaml
 .docker-data/
 
+# Ansible: real inventories, SSH keys and known_hosts stay local (templates: *.ini.example)
+ansible/.ssh/
+ansible/inventory/*.ini
+!ansible/inventory/*.ini.example
+!ansible/inventory/local-test.ini
+ansible/.vault-pass*
+
 # Infrastructure tooling (future phases)
 .terraform/
 *.tfstate

@@ -1,0 +1,7 @@
+---
+- name: Restart unattended-upgrades
+  ansible.builtin.systemd_service:
+    name: unattended-upgrades
+    state: restarted
+  # The service exists only when the package is installed (common_unattended_upgrades_enabled).
+  when: common_unattended_upgrades_enabled

@@ -1,0 +1,23 @@
+---
+# Example overrides; copy what you need into group_vars/all.yml or group_vars/<group>.yml.
+
+# Extra packages for every host, on top of roles/common/defaults/main.yml.
+common_extra_packages:
+  - vim
+  - git
+
+# Pin Docker Engine (docker-ce and docker-ce-cli) to an exact version; list them on the server with
+# "apt-cache madison docker-ce". Empty string: latest from the channel at first install.
+docker_engine_version: "5:29.9.0-1~ubuntu.24.04~noble"
+
+# Daemon settings written to /etc/docker/daemon.json.
+docker_engine_daemon_options:
+  log-driver: json-file
+  log-opts:
+    max-size: 10m
+    max-file: "3"
+  live-restore: true
+
+# Existing admin accounts allowed to use Docker without sudo. Docker group = root on that host.
+docker_engine_users:
+  - deploy

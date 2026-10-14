@@ -1,0 +1,16 @@
+---
+# Full configuration of the managed Ubuntu servers: baseline, then Docker Engine.
+#   .\ansible\ansible.ps1 ansible-playbook -i inventory/dev.ini playbooks/site.yml --check --diff
+- name: Configure managed servers (common baseline + Docker Engine)
+  hosts: managed
+  become: true
+  # Facts are gathered only after the safety checks, so a rejected host is never contacted.
+  gather_facts: false
+  pre_tasks:
+    - name: Run safety checks
+      ansible.builtin.import_tasks: tasks/preflight.yml
+    - name: Gather facts
+      ansible.builtin.setup:
+  roles:
+    - role: common
+    - role: docker_engine

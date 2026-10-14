@@ -1,0 +1,4 @@
+// {{ ansible_managed }}
+// Role "common" (devops-production-platform). Switch with common_unattended_upgrades_enabled.
+APT::Periodic::Update-Package-Lists "{{ '1' if common_unattended_upgrades_enabled else '0' }}";
+APT::Periodic::Unattended-Upgrade "{{ '1' if common_unattended_upgrades_enabled else '0' }}";
