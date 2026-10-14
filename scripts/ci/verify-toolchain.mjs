@@ -59,6 +59,13 @@ checkRange('git', await toolVersion('git', 'git', ['--version']));
 checkRange('docker client', await toolVersion('docker client', 'docker', ['version', '--format', '{{.Client.Version}}']));
 // The integration tests start a disposable PostgreSQL container, so the daemon must be reachable.
 checkRange('docker server', await toolVersion('docker daemon', 'docker', ['version', '--format', '{{.Server.Version}}']));
+// Phase 3 stages (image build, SonarQube, Trivy); only the Jenkins agent is required to have them.
+if (process.argv.includes('--security-tools')) {
+  checkRange('docker buildx', await toolVersion('docker buildx', 'docker', ['buildx', 'version']));
+  checkRange('sonar-scanner', await toolVersion('sonar-scanner', 'sonar-scanner', ['--version']).then((out) =>
+    out === undefined ? undefined : (out.split('\n').find((line) => line.includes('SonarScanner CLI'))?.replace(/^.*INFO\s+/, '') ?? out)));
+  checkRange('trivy', await toolVersion('trivy', 'trivy', ['--version']).then((out) => out?.split('\n')[0]));
+}
 console.log(`  ${'platform'.padEnd(16)} ${process.platform}/${process.arch}`);
 
 if (errors.length > 0) {

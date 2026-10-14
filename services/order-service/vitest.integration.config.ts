@@ -6,6 +6,7 @@ const SERVICE = 'order-service';
 const KIND = 'integration';
 // Set by CI (scripts/run-integration-tests.mjs); resolved against the repository root.
 const reportsDir = process.env.JUNIT_REPORTS_DIR;
+const coverageDir = process.env.COVERAGE_REPORTS_DIR;
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 
 export default defineConfig({
@@ -28,5 +29,13 @@ export default defineConfig({
           ],
         ]
       : ['default'],
+    // LCOV for SonarQube when CI sets COVERAGE_REPORTS_DIR: <dir>/<kind>/<service>/lcov.info
+    coverage: {
+      enabled: Boolean(coverageDir),
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      reporter: [['lcov', { projectRoot: repoRoot }], 'text-summary'],
+      reportsDirectory: resolve(repoRoot, coverageDir ?? 'coverage', KIND, SERVICE),
+    },
   },
 });

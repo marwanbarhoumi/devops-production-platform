@@ -23,7 +23,7 @@ daemon, all defined in [`docker-compose.yml`](docker-compose.yml). The pipeline 
 | Component | Image / build | Purpose |
 | --- | --- | --- |
 | `controller` | [`controller/Dockerfile`](controller/Dockerfile): `jenkins/jenkins:2.580.1-lts-jdk21` + 75 pinned plugins ([`plugins.txt`](controller/plugins.txt)) + [`casc.yaml`](controller/casc.yaml) | UI, scheduling, build history. Never runs builds (0 executors). |
-| `agent` | [`agent/Dockerfile`](agent/Dockerfile): `jenkins/inbound-agent:3391.va_37fa_a_305d6d-2-jdk21` + Node.js 24.16.0 / npm 11.13.0 + Docker CLI 29.9.0 | Runs every pipeline step. Labels `linux nodejs24 docker`. |
+| `agent` | [`agent/Dockerfile`](agent/Dockerfile): `jenkins/inbound-agent:3391.va_37fa_a_305d6d-2-jdk21` + Node.js 24.16.0 / npm 11.13.0 + Docker CLI 29.9.0 with buildx; Phase 3: SonarScanner CLI 8.1 + Trivy 0.75 | Runs every pipeline step. Labels `linux nodejs24 docker`. |
 | `dind` | `docker:29.9.0-dind` (privileged) | Private Docker daemon for containers started by builds. |
 
 The application stack (`../docker-compose.yml`, project `devops-production-platform`) and this stack
@@ -259,8 +259,16 @@ Open the job → **Build Now**. The first build takes longer: `npm ci` fills the
 | Unit & API Tests | `npm run test:ci` | Any test fails, or a report is missing/empty/invalid |
 | Integration Tests | `npm run test:integration:ci` | Database cannot start, any test fails, or a report is missing (10 min timeout) |
 | Build | `npm run build` | Compilation fails |
+| SonarQube Analysis (Phase 3) | `sonar-scanner` with the `sonarqube-token` credential | Quality gate not passed, SonarQube down, or credential missing |
+| Trivy Filesystem Scan (Phase 3) | `node scripts/ci/trivy-scan.mjs fs` | Fixable HIGH/CRITICAL vulnerability, or HIGH/CRITICAL secret or Dockerfile misconfiguration |
+| Build Images (Phase 3) | `node scripts/ci/images.mjs build` | An image does not build |
+| Scan Images (Phase 3) | `node scripts/ci/images.mjs scan` | Fixable HIGH/CRITICAL vulnerability or HIGH/CRITICAL secret in an image |
+| Publish Images (Phase 3, `main` only) | `docker login` + `node scripts/ci/images.mjs push` | Push rejected; skipped with a message when the `container-registry` credential does not exist |
 
-The whole build is limited to 30 minutes, and builds of the same job queue up instead of running
+Phase 3 stages, SonarQube setup and the Trivy policy: [security/README.md](../security/README.md).
+`Verify Toolchain` also checks docker buildx, SonarScanner and Trivy on the agent (`--security-tools`).
+
+The whole build is limited to 45 minutes, and builds of the same job queue up instead of running
 concurrently. Every command's exit code is respected: a failed stage marks the build **FAILURE**, and
 the remaining stages show as *skipped due to earlier failure(s)*. Test reports are published even when
 tests fail. Each failed stage prints a one-line hint with the local command that reproduces it. Open

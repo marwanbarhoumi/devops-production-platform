@@ -12,7 +12,10 @@ import { repoRoot, run, serviceName, verifyJUnitReports, workspaces } from './li
 
 const reportsDir = resolve(repoRoot, process.env.JUNIT_REPORTS_DIR ?? 'reports/junit');
 const unitDir = resolve(reportsDir, 'unit');
+// LCOV for SonarQube: reports/coverage/unit/<service>/lcov.info
+const coverageDir = resolve(repoRoot, process.env.COVERAGE_REPORTS_DIR ?? 'reports/coverage');
 rmSync(unitDir, { recursive: true, force: true });
+rmSync(resolve(coverageDir, 'unit'), { recursive: true, force: true });
 
 const failedSuites = [];
 const expectedReports = [];
@@ -21,7 +24,7 @@ for (const workspace of workspaces()) {
   console.log(`\n=== Unit/API tests: ${service} ===`);
   expectedReports.push(resolve(unitDir, `${service}.xml`));
   const { code } = await run('npm', ['run', 'test', '--workspace', workspace], {
-    env: { ...process.env, JUNIT_REPORTS_DIR: reportsDir },
+    env: { ...process.env, JUNIT_REPORTS_DIR: reportsDir, COVERAGE_REPORTS_DIR: coverageDir },
   });
   if (code !== 0) failedSuites.push(service);
 }

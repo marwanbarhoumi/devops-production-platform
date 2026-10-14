@@ -152,3 +152,10 @@ integration-test database uses the same image and init script as the Compose sta
 build, and runs on the CI stack's private Docker daemon, so CI cannot affect the application stack. The
 Jenkins stack (`jenkins/docker-compose.yml`, project `dpp-jenkins`) is independent of the application
 stack. Details: [jenkins/README.md](../jenkins/README.md); rationale: DECISIONS D-015 to D-020.
+
+Phase 3 continues the same pipeline: SonarQube Analysis (quality gate) → Trivy Filesystem Scan →
+Build Images → Scan Images (Trivy + CycloneDX SBOM) → Publish Images (GHCR, `main` only). SonarQube runs
+as its own Compose project (`security/sonarqube`, `dpp-sonarqube`, 127.0.0.1:9100) with its own
+PostgreSQL; the agent reaches it through `host.docker.internal`. Images are built and scanned on the
+DinD daemon, so CI images never appear on the host daemon. Details:
+[security/README.md](../security/README.md); rationale: DECISIONS D-021 to D-025.

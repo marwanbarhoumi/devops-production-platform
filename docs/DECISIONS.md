@@ -205,6 +205,65 @@ Port 8080 (Jenkins' default) was already taken on the build machine by Docker De
 and is commonly used by other local tools. The controller still listens on 8080 inside its container.
 Change `JENKINS_HTTP_PORT` and `JENKINS_URL` in `jenkins/.env` to use another port.
 
+## D-021 SonarQube as a separate local stack, reached through the host
+
+**Decision:** SonarQube Community Build 26.10 with its own PostgreSQL 17 runs as the Compose project
+`dpp-sonarqube` (`security/sonarqube/`), published on `127.0.0.1:9100`. The Jenkins agent reaches it at
+`host.docker.internal:9100`.
+
+**Why:** SonarQube, Jenkins and the application keep separate lifecycles, networks, databases and volumes;
+stopping one never affects the others. Going through the host avoids a shared Docker network that would make
+one Compose project depend on another. Port 9000 was taken on the build machine.
+
+**Trade-off:** `host.docker.internal` is a Docker Desktop name; on plain Linux the agent's
+`extra_hosts: host-gateway` entry provides it, but SonarQube must then listen on an address the Docker
+bridge can reach.
+
+## D-022 Quality gate enforced by the scanner, not by a Jenkins plugin
+
+**Decision:** `sonar.qualitygate.wait=true` makes SonarScanner CLI (installed in the agent image) wait for
+the gate and fail the stage. The token is a SonarQube *project analysis token* stored as the Jenkins
+credential `sonarqube-token`. The default gate "Sonar way" applies.
+
+**Why:** no extra Jenkins plugin (and its transitive dependencies) to pin, and no webhook from SonarQube
+back to Jenkins, which would need Jenkins to be reachable from SonarQube. The project-scoped token can only
+analyze this project.
+
+**Trade-off:** the Jenkins UI shows no SonarQube badge; the log prints the dashboard link instead.
+
+## D-023 Trivy policy: block fixable HIGH/CRITICAL, report the rest
+
+**Decision:** Trivy scans the repository (lockfile, secrets, Dockerfiles) and each image. HIGH/CRITICAL
+vulnerabilities with a fixed version, and HIGH/CRITICAL secrets and misconfigurations, fail the build. Unfixed
+vulnerabilities are reported only. Exceptions need a `.trivyignore` entry with an expiry date. The policy is
+evaluated in Node from Trivy's JSON report.
+
+**Why:** a gate developers can always act on (upgrade to the fixed version) instead of one that blocks on
+issues nobody can fix yet. One Trivy run per target gives both the full archived report and the decision.
+
+## D-024 Minimal runtime images: package managers removed, OS updates applied
+
+**Decision:** the service runtime stage runs `apk upgrade` and deletes npm, npx, corepack and yarn after
+installing production dependencies. The Node base image is pinned by digest.
+
+**Why:** Trivy found 13 HIGH and 1 CRITICAL advisories, all in npm's bundled dependencies (tar, undici,
+sigstore, ...) and in Alpine's OpenSSL. The services only run `node dist/server.js`, so a package manager in a
+production image is attack surface without benefit.
+
+**Trade-off:** `apk upgrade` makes the runtime layer depend on the build date; the digest-pinned base
+keeps everything else reproducible, and Trivy verifies every build.
+
+## D-025 Image tags and registry
+
+**Decision:** images are tagged `<sha12>` and `<version>-<sha7>` (service `package.json` version), never
+`latest`, and published to GitHub Container Registry only from `main`, after all checks. Publishing uses a
+Jenkins *Username with password* credential (`container-registry`) and a throwaway Docker config; without the
+credential the stage is skipped with an explicit message.
+
+**Why:** immutable, traceable tags (the SHA ties an image to its commit; the version is readable). GHCR sits
+next to the source repository and needs no extra account. The pipeline stays green and useful before a
+registry token exists, and the token never persists on the agent.
+
 ## Roadmap changes
 
 Any change to [PROJECT_PLAN.md](PROJECT_PLAN.md) phases is recorded here.

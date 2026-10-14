@@ -53,6 +53,9 @@ process.on('SIGTERM', () => void shutdown(143));
 const reportsDir = ephemeral || process.env.JUNIT_REPORTS_DIR
   ? resolve(repoRoot, process.env.JUNIT_REPORTS_DIR ?? 'reports/junit')
   : undefined;
+// LCOV for SonarQube (CI only): reports/coverage/integration/<service>/lcov.info
+const coverageDir = reportsDir ? resolve(repoRoot, process.env.COVERAGE_REPORTS_DIR ?? 'reports/coverage') : undefined;
+if (coverageDir) rmSync(resolve(coverageDir, 'integration'), { recursive: true, force: true });
 
 try {
   db = ephemeral ? await startEphemeralPostgres() : await composeDatabase();
@@ -88,7 +91,7 @@ for (const suite of suites) {
   const { code } = await run('npm', ['run', 'test:integration', '--workspace', suite.workspace], {
     env: {
       ...process.env,
-      ...(reportsDir ? { JUNIT_REPORTS_DIR: reportsDir } : {}),
+      ...(reportsDir ? { JUNIT_REPORTS_DIR: reportsDir, COVERAGE_REPORTS_DIR: coverageDir } : {}),
       LOG_LEVEL: 'silent',
       DB_HOST: db.host,
       DB_PORT: String(db.port),

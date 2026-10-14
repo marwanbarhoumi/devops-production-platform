@@ -11,7 +11,8 @@ Prometheus/Grafana/Alertmanager monitoring, and documented deployment and rollba
 | --- | --- | --- |
 | 1 | Foundation: microservices, PostgreSQL, Docker Compose, tests, health checks, metrics | **Complete** |
 | 2 | CI with Jenkins: `Jenkinsfile`, local controller + build agent, JUnit reports, disposable test database | **Complete** ([jenkins/README.md](jenkins/README.md)) |
-| 3-10 | Quality/security, Ansible, Kubernetes, Helm, CD, monitoring, hardening, portfolio | Pending |
+| 3 | DevSecOps: coverage, SonarQube quality gate, Trivy scans, image build + SBOM, GHCR publishing | In progress ([security/README.md](security/README.md)) |
+| 4-10 | Ansible, Kubernetes, Helm, CD, monitoring, hardening, portfolio | Pending |
 
 See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) for the full roadmap and verification results,
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the system design and
@@ -56,11 +57,14 @@ devops-production-platform/
 │   └── order-service/        # src/, test/ (unit + *.int.test.ts), Dockerfile
 ├── infra/postgres/init/      # first-boot script: per-service roles and databases
 ├── scripts/                  # dev runner, integration-test runner, smoke test
-│   └── ci/                   # CI helpers: toolchain check, JUnit unit-test runner, disposable PostgreSQL
+│   └── ci/                   # CI helpers: toolchain, tests, disposable PostgreSQL, Trivy, images
 ├── jenkins/                  # local Jenkins: controller + agent + DinD (docker-compose.yml, README)
+├── security/                 # SonarQube stack + bootstrap, security guide (Phase 3)
 ├── docs/                     # PROJECT_PLAN, ARCHITECTURE, DECISIONS
-├── ansible/ kubernetes/ helm/ monitoring/ security/   # future phases (placeholders)
+├── ansible/ kubernetes/ helm/ monitoring/   # future phases (placeholders)
 ├── Jenkinsfile               # CI pipeline
+├── sonar-project.properties  # SonarQube analysis settings
+├── .trivyignore              # accepted Trivy findings (with expiry)
 ├── docker-compose.yml
 ├── .env.example
 ├── eslint.config.mjs

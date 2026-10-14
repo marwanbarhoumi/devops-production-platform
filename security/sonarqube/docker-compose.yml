@@ -1,0 +1,97 @@
+# devops-production-platform - local SonarQube for code quality analysis (Phase 3)
+#
+# Independent of the application stack (../../docker-compose.yml) and of Jenkins (../../jenkins):
+# own project name, network, database and volumes.
+#
+#   cd security/sonarqube
+#   docker compose up -d --wait           # start (first start: see README "First-time setup")
+#   docker compose stop                   # stop, keeping all data
+#
+# Only the web UI is published, on 127.0.0.1. Jenkins reaches it through host.docker.internal.
+
+name: dpp-sonarqube
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    # SonarQube's own database; the application's PostgreSQL is never used.
+    image: postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sonarqube
+      POSTGRES_DB: sonarqube
+      POSTGRES_PASSWORD: ${SONARQUBE_DB_PASSWORD:?Set SONARQUBE_DB_PASSWORD in security/sonarqube/.env (see .env.example)}
+    volumes:
+      - sonarqube-db:/var/lib/postgresql/data
+    networks:
+      - sonarqube
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonarqube -d sonarqube"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  sonarqube:
+    # Community Build 26.10 (October 2026). Upgrade by changing tag and digest together; SonarQube
+    # migrates its database on start, so back up the db volume first.
+    image: sonarqube:26.10.0.133078-community@sha256:2e378f7852b67d43507d3d383ee8fb5a522b8b0f920be9803f74f72952fce8f1
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://db:5432/sonarqube
+      SONAR_JDBC_USERNAME: sonarqube
+      SONAR_JDBC_PASSWORD: ${SONARQUBE_DB_PASSWORD:?Set SONARQUBE_DB_PASSWORD in security/sonarqube/.env (see .env.example)}
+      # Projects are private and anonymous users see nothing.
+      SONAR_FORCEAUTHENTICATION: "true"
+      SONAR_TELEMETRY_ENABLE: "false"
+    ports:
+      # 9100 rather than SonarQube's usual 9000, which is often taken (e.g. MinIO, Portainer).
+      - "${SONARQUBE_BIND_ADDRESS:-127.0.0.1}:${SONARQUBE_HTTP_PORT:-9100}:9000"
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-extensions:/opt/sonarqube/extensions
+      - sonarqube-logs:/opt/sonarqube/logs
+    networks:
+      - sonarqube
+    security_opt:
+      - no-new-privileges:true
+    # Embedded Elasticsearch needs vm.max_map_count >= 262144 on the Docker host (Docker Desktop: OK).
+    ulimits:
+      nofile:
+        soft: 131072
+        hard: 131072
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 3G
+
+networks:
+  sonarqube: {}
+
+volumes:
+  sonarqube-db:
+  sonarqube-data:
+  sonarqube-extensions:
+  sonarqube-logs:

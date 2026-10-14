@@ -2,7 +2,9 @@
 # Build context: repository root (needed for the npm workspace lockfile).
 #   docker build -f services/api-gateway/Dockerfile -t devops-production-platform/api-gateway:local .
 
-ARG NODE_IMAGE=node:24.16-alpine3.22
+# Pinned by digest (multi-arch index) as well as tag: a rebuild uses exactly the same base image.
+# Upgrade: docker buildx imagetools inspect node:<tag>, then update tag and digest together.
+ARG NODE_IMAGE=node:24.16-alpine3.22@sha256:191c9f0080fcbbc6547a85dc0ff7988072214a355aabdc1d2ec55a7dae5eea8a
 
 # ---- build: install all dependencies and compile TypeScript -----------------
 FROM ${NODE_IMAGE} AS build
@@ -24,8 +26,15 @@ COPY package.json package-lock.json ./
 COPY services/api-gateway/package.json services/api-gateway/
 COPY services/product-service/package.json services/product-service/
 COPY services/order-service/package.json services/order-service/
+# Production dependencies only. Then: Alpine security fixes released after the base image (e.g.
+# OpenSSL), and removal of npm/yarn/corepack, which are not needed at runtime and bring their own
+# vulnerable dependencies (found by Trivy).
 RUN npm ci --workspace services/api-gateway --omit=dev --no-audit --no-fund \
-    && npm cache clean --force
+    && npm cache clean --force \
+    && apk upgrade --no-cache \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
+        /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+        /root/.npm
 COPY --from=build /app/services/api-gateway/dist services/api-gateway/dist
 
 WORKDIR /app/services/api-gateway

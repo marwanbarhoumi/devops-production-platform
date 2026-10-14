@@ -1,4 +1,4 @@
-# devops-production-platform - local Jenkins CI stack (Phase 2)
+# devops-production-platform - local Jenkins CI stack (Phases 2 and 3)
 #
 # Independent of the application stack in ../docker-compose.yml (own project name, network and volumes).
 #
@@ -43,7 +43,7 @@ services:
           memory: 1536M
 
   # Docker-in-Docker: a private Docker daemon for builds. Pipelines start their throwaway containers
-  # (integration-test PostgreSQL) here, never on the host daemon, so CI cannot touch the application
+  # (integration-test PostgreSQL) and build the service images here, never on the host daemon, so CI cannot touch the application
   # stack, its volumes or any other container on this machine.
   # SECURITY: privileged mode gives this container root-level control of the Docker Desktop VM / Linux
   # host. Acceptable for a local portfolio setup; do not build untrusted pull requests with it.
@@ -91,9 +91,13 @@ services:
       DOCKER_CERT_PATH: /certs/client
     secrets:
       - jenkins_agent_secret
+    extra_hosts:
+      # SonarQube (security/sonarqube) is published on the host; Docker Desktop defines this name
+      # already, plain Linux Docker needs the mapping.
+      - "host.docker.internal:host-gateway"
     volumes:
       - docker-certs:/certs/client:ro
-      # Workspace and npm cache survive agent restarts.
+      # Workspace, npm cache and Trivy vulnerability database (~/.cache/trivy) survive agent restarts.
       - agent-home:/home/jenkins
     networks:
       - jenkins

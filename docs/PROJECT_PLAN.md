@@ -10,7 +10,7 @@ Status legend: **Complete** · In progress · Pending
 | --- | --- | --- |
 | 1 | Foundation | **Complete** (2026-10-13) |
 | 2 | CI with Jenkins | **Complete** (2026-10-14); one-time UI setup and a public webhook endpoint remain manual |
-| 3 | CI quality and security | Pending |
+| 3 | CI quality and security | In progress (2026-10-14): implemented; first full pipeline run pending |
 | 4 | Ansible automation | Pending |
 | 5 | Kubernetes | Pending |
 | 6 | Helm | Pending |
@@ -74,7 +74,7 @@ in both services assert consistent labels.
 
 ### Known limitations carried forward
 
-- Base images pinned by tag, not digest (Phase 3).
+- Base images pinned by tag, not digest (Phase 3: now pinned by digest too).
 - No authentication or rate limiting on the gateway (Phase 9).
 - One shared PostgreSQL server (separate databases/roles); no backups yet (Phase 9).
 - `.github/workflows/` exists but contains no workflow; Jenkins is the CI system of record (Phase 2).
@@ -145,13 +145,27 @@ which only affects that project).
 - Coverage publishing (consumed by the SonarQube quality gate) and Docker image build validation (built,
   scanned and tagged there). See "Roadmap changes" in DECISIONS.md.
 
-## Phase 3 - CI quality and security — Pending
+## Phase 3 - CI quality and security — In progress
 
-- Docker image builds for all three services in the pipeline; test coverage reports for SonarQube (moved from Phase 2)
-- SonarQube server and quality gate enforced in the pipeline
-- Trivy scanning of images and filesystem (dependencies, misconfigurations, secrets); fail on HIGH/CRITICAL
-- Secure image builds: digest-pinned base images, SBOM generation
-- Image tagging strategy (git SHA + semantic version) and publishing to a container registry
+Quality and security gates in the existing pipeline, then image build, scan and publishing.
+Guide: [security/README.md](../security/README.md). Decisions: D-021 to D-025 in [DECISIONS.md](DECISIONS.md).
+
+### Deliverables
+
+- [x] Test coverage (v8, LCOV) from unit and integration tests, for SonarQube (moved from Phase 2)
+- [x] Local SonarQube 26.10 + own PostgreSQL (`security/sonarqube/`, port 9100), reproducible bootstrap
+      (admin password, project, project analysis token) and token import into Jenkins without a login
+- [x] Pipeline stage "SonarQube Analysis": quality gate "Sonar way" enforced (`sonar.qualitygate.wait`)
+- [x] Pipeline stage "Trivy Filesystem Scan": lockfile vulnerabilities, secrets, Dockerfile misconfigurations
+- [x] Pipeline stages "Build Images" / "Scan Images": three service images built in DinD, Trivy
+      vulnerabilities + secrets, CycloneDX SBOM per image; fail on fixable HIGH/CRITICAL
+- [x] Secure images: digest-pinned base images (services, agent tools, SonarQube stack); runtime images
+      without npm/yarn/corepack; Alpine security updates
+- [x] Tag strategy `<sha12>` + `<version>-<sha7>`, OCI labels; stage "Publish Images" to GHCR from `main`
+      (needs the `container-registry` credential; skipped with a message without it)
+- [x] Agent image: SonarScanner CLI 8.1, Trivy 0.75, docker buildx; toolchain check covers them
+- [ ] First full pipeline run on the owner's Jenkins with all Phase 3 stages green
+- [ ] Registry publishing verified (needs a GitHub token with `write:packages` from the owner)
 
 ## Phase 4 - Ansible automation — Pending
 
