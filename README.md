@@ -11,7 +11,7 @@ Prometheus/Grafana/Alertmanager monitoring, and documented deployment and rollba
 | --- | --- | --- |
 | 1 | Foundation: microservices, PostgreSQL, Docker Compose, tests, health checks, metrics | **Complete** |
 | 2 | CI with Jenkins: `Jenkinsfile`, local controller + build agent, JUnit reports, disposable test database | **Complete** ([jenkins/README.md](jenkins/README.md)) |
-| 3 | DevSecOps: coverage, SonarQube quality gate, Trivy scans, image build + SBOM, GHCR publishing | In progress ([security/README.md](security/README.md)) |
+| 3 | DevSecOps: coverage, SonarQube quality gate, Trivy scans, image build + SBOM, GHCR publishing | **Complete** ([security/README.md](security/README.md)); registry push needs a GHCR token |
 | 4-10 | Ansible, Kubernetes, Helm, CD, monitoring, hardening, portfolio | Pending |
 
 See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) for the full roadmap and verification results,

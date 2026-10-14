@@ -10,7 +10,7 @@ Status legend: **Complete** · In progress · Pending
 | --- | --- | --- |
 | 1 | Foundation | **Complete** (2026-10-13) |
 | 2 | CI with Jenkins | **Complete** (2026-10-14); one-time UI setup and a public webhook endpoint remain manual |
-| 3 | CI quality and security | In progress (2026-10-14): implemented; first full pipeline run pending |
+| 3 | CI quality and security | **Complete** (2026-10-14); registry push needs the owner's GHCR token |
 | 4 | Ansible automation | Pending |
 | 5 | Kubernetes | Pending |
 | 6 | Helm | Pending |
@@ -145,7 +145,7 @@ which only affects that project).
 - Coverage publishing (consumed by the SonarQube quality gate) and Docker image build validation (built,
   scanned and tagged there). See "Roadmap changes" in DECISIONS.md.
 
-## Phase 3 - CI quality and security — In progress
+## Phase 3 - CI quality and security — **Complete**
 
 Quality and security gates in the existing pipeline, then image build, scan and publishing.
 Guide: [security/README.md](../security/README.md). Decisions: D-021 to D-025 in [DECISIONS.md](DECISIONS.md).
@@ -164,8 +164,32 @@ Guide: [security/README.md](../security/README.md). Decisions: D-021 to D-025 in
 - [x] Tag strategy `<sha12>` + `<version>-<sha7>`, OCI labels; stage "Publish Images" to GHCR from `main`
       (needs the `container-registry` credential; skipped with a message without it)
 - [x] Agent image: SonarScanner CLI 8.1, Trivy 0.75, docker buildx; toolchain check covers them
-- [ ] First full pipeline run on the owner's Jenkins with all Phase 3 stages green
+- [x] First full pipeline runs on the owner's Jenkins with all Phase 3 stages green (builds #3 and #4)
 - [ ] Registry publishing verified (needs a GitHub token with `write:packages` from the owner)
+
+### Verification (2026-10-14, owner's Jenkins, job `devops-production-platform`)
+
+| What | How | Result |
+| --- | --- | --- |
+| Local checks | `npm run lint`, `typecheck`, `test:ci`, `test:integration:ci`, `build`; `docker compose config` for all three stacks | All pass; coverage LCOV written for 3 + 2 suites |
+| SonarQube stack | `node security/sonarqube/bootstrap.mjs` (twice) | Healthy on 127.0.0.1:9100; admin password replaced; project and project analysis token created; second run changes nothing |
+| Token into Jenkins | `node jenkins/import-credential.mjs` | `added sonarqube-token`; no staging file or init script left; builds #1-#2 kept; agent reconnected |
+| Agent image | `docker compose build agent`, then recreate the agent only | buildx 0.38.0, SonarScanner CLI 8.1.0.6389, Trivy 0.75.0; reaches SonarQube and reads DinD images over TLS |
+| Image hardening | Trivy before/after on `api-gateway` | Before: 13 HIGH + 1 CRITICAL (npm's bundled packages) + 4 HIGH (OpenSSL). After: 0 fixable HIGH/CRITICAL; container healthy |
+| Build #3 (`efda25f`) | Webhook push event | **SUCCESS**, 5 min 38 s; 76 tests; quality gate PASSED (coverage 83.4 %, 0 bugs, 0 vulnerabilities, 0 hotspots, 2 code smells); Trivy fs: 0 HIGH/CRITICAL; 3 images built, 0 vulnerabilities of any severity, 3 SBOMs (123 components each); publishing skipped (no credential); 6 tags cleaned from DinD |
+| Build #4 (`2fb89ad`) | Webhook push event, after fixing the 2 code smells (rule S8786) | **SUCCESS**, 2 min 56 s; 78 tests; quality gate PASSED: 0 code smells, new-code coverage 100 %, overall 85.2 % |
+| Secrets in logs | Search of build #3 log | 84 hex strings, all `sha256:` image digests; no token |
+
+### Known findings
+
+- **Duplication 47 %** (SonarQube): `db.ts`, `metrics.ts`, `http.ts`, `server.ts` and parts of `config.ts`
+  are deliberately copied per service (D-002, no shared package). The gate only checks duplication on new
+  code, so it passes; extracting a shared package is a candidate for Phase 9.
+- Trivy LOW DS-0026: the agent image has no `HEALTHCHECK` (the inbound agent has no health endpoint; Jenkins
+  shows the node's state). Not blocking.
+- Registry publishing is implemented but not yet exercised: it needs the `container-registry` credential.
+- The controller Dockerfile's explicit `USER jenkins` (Trivy DS-0002) takes effect at the next controller
+  image rebuild; it does not change behaviour (the base image already runs as `jenkins`).
 
 ## Phase 4 - Ansible automation — Pending
 
