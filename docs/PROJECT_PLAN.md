@@ -127,6 +127,7 @@ Guide: [jenkins/README.md](../jenkins/README.md). Decisions: D-015 to D-020 in [
 | Development stack untouched | `docker ps -a` / `docker volume ls` before and after | All app containers still up; dev volume intact; nothing removed |
 | Webhook endpoint | GitHub-style `ping` POST to `/github-webhook/` | HTTP 200 |
 | Owner's agent (2026-10-14) | Agent looped on the Remoting help: `secrets/agent-secret` was empty, so `-secret @file` expanded to nothing. Fixed with a validating entrypoint; secret rotated with `rotate-agent-secret.ps1` | `ci-agent-1` connected over WebSocket; reconnects after `restart` and `stop`/`start`; no secret in logs, env, process list or files |
+| Owner's Jenkins, job `devops-production-platform` | Pipeline from SCM (`*/main`, `Jenkinsfile`), triggered by a GitHub-format `push` POST to `/github-webhook/` | Build #1 (`b567ae6`): FAILURE in Integration Tests — Docker Hub cut off a postgres layer download (`short read ... unexpected EOF`); 68 unit/API tests passed. Fixed in `5cb0022` (pull with retries; cleanup before `junit`). Build #2 (`5cb0022`): **SUCCESS** in 1 min 56 s, 76 tests (68 unit/API + 8 integration) recorded, 0 failed; `dist` of 3 services archived; test DB removed; no secrets in the log |
 | Phase 1 regression | `npm run test:smoke` on the running Compose stack | 17/17 |
 
 The throwaway verification instance was removed afterwards (`docker compose -p dpp-jenkins-verify down -v`,
