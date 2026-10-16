@@ -66,7 +66,7 @@ devops-production-platform/
 ├── kubernetes/ helm/ monitoring/   # future phases (placeholders)
 ├── Jenkinsfile               # CI pipeline
 ├── sonar-project.properties  # SonarQube analysis settings
-├── .trivyignore              # accepted Trivy findings (with expiry)
+├── .trivyignore.yaml         # accepted Trivy findings (path-scoped, with expiry)
 ├── docker-compose.yml
 ├── .env.example
 ├── eslint.config.mjs

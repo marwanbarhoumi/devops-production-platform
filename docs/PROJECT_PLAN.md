@@ -190,6 +190,11 @@ Guide: [security/README.md](../security/README.md). Decisions: D-021 to D-025 in
 - Registry publishing is implemented but not yet exercised: it needs the `container-registry` credential.
 - The controller Dockerfile's explicit `USER jenkins` (Trivy DS-0002) takes effect at the next controller
   image rebuild; it does not change behaviour (the base image already runs as `jenkins`).
+- Follow-up (2026-10-16): Phase 4's `ansible/test/target/Dockerfile` broke the filesystem scan (HIGH DS-0002,
+  root user; systemd needs it). Accepted for that file only in `.trivyignore.yaml` (expires 2027-04-16), which
+  replaced `.trivyignore`. Trivy scans now also write text reports (`reports/trivy/*.txt`), archived by Jenkins.
+  Local re-run at `985f55b`: Trivy fs 0 HIGH/CRITICAL after the exception; 3 images 0 vulnerabilities, 3 SBOMs
+  (CycloneDX 1.7, 122 components each). Not yet confirmed by a Jenkins build.
 
 ## Phase 4 - Ansible automation — **Complete**
 

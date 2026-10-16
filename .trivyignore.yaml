@@ -1,0 +1,17 @@
+# Accepted Trivy findings (read by scripts/ci/trivy-scan.mjs). Keep this list short.
+# Each entry needs a statement (reason and owner) and an expired_at date; scope it with paths where possible.
+# Trivy stops ignoring an entry after its expired_at date, so the finding blocks the build again.
+#
+#   vulnerabilities:
+#     - id: CVE-2026-12345
+#       statement: busybox wget, not reachable (wget is never run); owner marwan
+#       expired_at: 2026-12-31
+
+misconfigurations:
+  - id: DS-0002
+    paths:
+      - ansible/test/target/Dockerfile
+    statement: >-
+      Disposable Ansible test target: systemd runs as PID 1 and needs root. Never built or published by CI;
+      the service images keep the non-root rule. Owner marwan.
+    expired_at: 2027-04-16

@@ -235,8 +235,9 @@ analyze this project.
 
 **Decision:** Trivy scans the repository (lockfile, secrets, Dockerfiles) and each image. HIGH/CRITICAL
 vulnerabilities with a fixed version, and HIGH/CRITICAL secrets and misconfigurations, fail the build. Unfixed
-vulnerabilities are reported only. Exceptions need a `.trivyignore` entry with an expiry date. The policy is
-evaluated in Node from Trivy's JSON report.
+vulnerabilities are reported only. Exceptions need a `.trivyignore.yaml` entry with a reason, an expiry date
+and, where possible, the paths it applies to (the YAML format replaced `.trivyignore` so an exception can be
+limited to one file). The policy is evaluated in Node from Trivy's JSON report.
 
 **Why:** a gate developers can always act on (upgrade to the fixed version) instead of one that blocks on
 issues nobody can fix yet. One Trivy run per target gives both the full archived report and the decision.

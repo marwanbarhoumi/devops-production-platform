@@ -169,7 +169,7 @@ pipeline {
                 sh 'node scripts/ci/trivy-scan.mjs fs'
             }
             post {
-                always { archiveArtifacts artifacts: 'reports/trivy/filesystem.json', allowEmptyArchive: true }
+                always { archiveArtifacts artifacts: 'reports/trivy/filesystem.json, reports/trivy/filesystem.txt', allowEmptyArchive: true }
                 failure { echo 'Trivy found HIGH/CRITICAL issues in dependencies, secrets or Dockerfiles: see the BLOCKING lines above and security/README.md.' }
             }
         }
@@ -191,7 +191,7 @@ pipeline {
             }
             post {
                 always {
-                    archiveArtifacts artifacts: 'reports/trivy/image-*.json, reports/sbom/*.cdx.json, reports/images/manifest.json',
+                    archiveArtifacts artifacts: 'reports/trivy/image-*.json, reports/trivy/image-*.txt, reports/sbom/*.cdx.json, reports/images/manifest.json',
                         allowEmptyArchive: true, fingerprint: true
                 }
                 failure { echo 'Trivy found HIGH/CRITICAL vulnerabilities or secrets in an image: see the BLOCKING lines above and security/README.md.' }

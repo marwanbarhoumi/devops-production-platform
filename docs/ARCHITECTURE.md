@@ -154,7 +154,8 @@ Jenkins stack (`jenkins/docker-compose.yml`, project `dpp-jenkins`) is independe
 stack. Details: [jenkins/README.md](../jenkins/README.md); rationale: DECISIONS D-015 to D-020.
 
 Phase 3 continues the same pipeline: SonarQube Analysis (quality gate) → Trivy Filesystem Scan →
-Build Images → Scan Images (Trivy + CycloneDX SBOM) → Publish Images (GHCR, `main` only). SonarQube runs
+Build Images → Scan Images (Trivy + CycloneDX SBOM) → Publish Images (GHCR, `main` only). Trivy reports
+(JSON and text) and SBOMs land in `reports/trivy/` and `reports/sbom/` and are archived with each build. SonarQube runs
 as its own Compose project (`security/sonarqube`, `dpp-sonarqube`, 127.0.0.1:9100) with its own
 PostgreSQL; the agent reaches it through `host.docker.internal`. Images are built and scanned on the
 DinD daemon, so CI images never appear on the host daemon. Details:

@@ -22,7 +22,7 @@ security/
     ├── .env.example          # database password template (.env is git-ignored)
     └── bootstrap.mjs         # start + first-time setup (admin password, project, Jenkins token)
 sonar-project.properties      # analysis scope, coverage paths, quality gate wait (repository root)
-.trivyignore                  # accepted Trivy findings, each with a reason and expiry (repository root)
+.trivyignore.yaml             # accepted Trivy findings, each with a reason, expiry and paths (repository root)
 scripts/ci/trivy-scan.mjs     # Trivy runs + the blocking policy
 scripts/ci/images.mjs         # image build / scan / push / cleanup, tag strategy
 jenkins/import-credential.mjs # stores a git-ignored secret file as a Jenkins credential
@@ -106,20 +106,43 @@ Policy (implemented in [`scripts/ci/trivy-scan.mjs`](../scripts/ci/trivy-scan.mj
   counted in the log and in the report but do not block, because no upgrade can remove them yet.
 - **Secrets** and **misconfigurations** (Dockerfiles): HIGH and CRITICAL always fail the build.
 - Only the file, line and rule of a secret are printed, never the value.
-- Every scan writes the full JSON report (all severities) to `reports/trivy/`, archived by Jenkins.
+- Every scan writes the full JSON report (all severities) and the same findings as a readable table
+  (`trivy convert`, no second scan) to `reports/trivy/`; Jenkins archives both.
 - The vulnerability database is cached in the agent's persistent home (`/home/jenkins/.cache/trivy`).
 
-Accepted risks go in [`.trivyignore`](../.trivyignore) with the reason, an owner and an `exp:` date; after
-that date the finding blocks again.
+| Report | Content |
+| --- | --- |
+| `reports/trivy/filesystem.json` / `.txt` | repository: `package-lock.json` dependencies, secrets, Dockerfile misconfigurations |
+| `reports/trivy/image-<service>.json` / `.txt` | one per service image: OS and npm packages, secrets |
+| `reports/sbom/<service>.cdx.json` | CycloneDX SBOM per service image |
+
+Jenkins archives them in the "Trivy Filesystem Scan" and "Scan Images" stages (also when the stage fails),
+under the build's **Artifacts**.
+
+Accepted risks go in [`.trivyignore.yaml`](../.trivyignore.yaml) with a statement (reason and owner), an
+`expired_at` date and, where possible, the `paths` they apply to; after that date the finding blocks again.
+Current exception: DS-0002 (image runs as root) for `ansible/test/target/Dockerfile` only. That disposable
+Ansible test target runs systemd as PID 1, which needs root; CI never builds or publishes it, and the rule
+still applies to every other Dockerfile.
 
 Hardening done so the images pass: the runtime stage of each service Dockerfile now installs Alpine
 security updates (`apk upgrade`) and removes npm, npx, corepack and yarn, which the services do not need
 at runtime and which carried 13 HIGH and 1 CRITICAL advisories in npm's bundled dependencies.
 
-Run the filesystem scan locally (Docker Desktop, no install):
+Run the scans locally (Docker Desktop, no install; PowerShell from the repository root). Filesystem, as in CI:
 
 ```powershell
-docker run --rm -v "${PWD}:/src:ro" aquasec/trivy:0.75.0 fs --scanners vuln,secret,misconfig --skip-dirs '**/node_modules' --severity HIGH,CRITICAL /src
+docker run --rm -v "${PWD}:/src:ro" aquasec/trivy:0.75.0 fs --ignorefile /src/.trivyignore.yaml --scanners vuln,secret,misconfig --skip-dirs '**/node_modules' --skip-dirs '**/dist' --severity HIGH,CRITICAL /src
+```
+
+Locally this also reports the git-ignored test key in `ansible/.ssh/` (a real private key on disk); CI checkouts
+never contain it.
+
+An image built by `docker compose build` (`devops-production-platform/<service>:local`), then its SBOM:
+
+```powershell
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${PWD}:/src:ro" aquasec/trivy:0.75.0 image --ignorefile /src/.trivyignore.yaml --scanners vuln,secret --severity HIGH,CRITICAL devops-production-platform/api-gateway:local
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${PWD}:/src" aquasec/trivy:0.75.0 image --format cyclonedx --output /src/reports/sbom/api-gateway.cdx.json devops-production-platform/api-gateway:local
 ```
 
 ## Images
@@ -165,6 +188,6 @@ and passed every check.
 | `QUALITY GATE STATUS: FAILED` | Open the dashboard link in the log; fix the issues or add tests for new code. |
 | SonarQube container restarts, log mentions `max virtual memory areas` | Raise `vm.max_map_count` to 262144 on the Docker host. |
 | `bootstrap.mjs`: admin password not accepted | Write the current admin password to `security/sonarqube/secrets/admin-password` (no newline) and re-run. |
-| Trivy: `BLOCKING HIGH CVE-...` | Upgrade the package to the fixed version shown; for base-image packages, rebuild (`apk upgrade`) or move to a newer base image digest. Accept only with a `.trivyignore` entry. |
+| Trivy: `BLOCKING HIGH CVE-...` | Upgrade the package to the fixed version shown; for base-image packages, rebuild (`apk upgrade`) or move to a newer base image digest. Accept only with a `.trivyignore.yaml` entry. |
 | Trivy: `failed to download vulnerability DB` | The agent needs internet access to `mirror.gcr.io` / `ghcr.io`; retry the build. |
 | Publish: `denied` / `unauthorized` | The token lacks `write:packages` or expired; update the `container-registry` credential. |

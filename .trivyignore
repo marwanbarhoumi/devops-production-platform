@@ -1,7 +1,0 @@
-# Accepted Trivy findings (read by scripts/ci/trivy-scan.mjs). Keep this list short.
-# One ID per line, each with the reason, the owner and an expiry date, for example:
-#
-#   # CVE-2026-12345: busybox wget, not reachable (wget is never run); owner: marwan; review by 2026-12-31
-#   CVE-2026-12345 exp:2026-12-31
-#
-# Trivy stops ignoring an entry after its exp: date, so the finding blocks the build again.
