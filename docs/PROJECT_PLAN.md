@@ -10,7 +10,7 @@ Status legend: **Complete** · In progress · Pending
 | --- | --- | --- |
 | 1 | Foundation | **Complete** (2026-10-13) |
 | 2 | CI with Jenkins | **Complete** (2026-10-14); one-time UI setup and a public webhook endpoint remain manual |
-| 3 | CI quality and security | **Complete** (2026-10-14); registry push needs the owner's GHCR token |
+| 3 | CI quality and security | **Complete** (2026-10-14); GHCR publishing verified by build #6 (2026-10-17) |
 | 4 | Ansible automation | **Complete** (2026-10-14) for the local scope; a real VM still needs a host and SSH credentials |
 | 5 | Kubernetes | Pending |
 | 6 | Helm | Pending |
@@ -165,7 +165,7 @@ Guide: [security/README.md](../security/README.md). Decisions: D-021 to D-025 in
       (needs the `container-registry` credential; skipped with a message without it)
 - [x] Agent image: SonarScanner CLI 8.1, Trivy 0.75, docker buildx; toolchain check covers them
 - [x] First full pipeline runs on the owner's Jenkins with all Phase 3 stages green (builds #3 and #4)
-- [ ] Registry publishing verified (needs a GitHub token with `write:packages` from the owner)
+- [x] Registry publishing verified: build #6 (`2d89c05`) pushed all three service images to GHCR
 
 ### Verification (2026-10-14, owner's Jenkins, job `devops-production-platform`)
 
@@ -178,6 +178,7 @@ Guide: [security/README.md](../security/README.md). Decisions: D-021 to D-025 in
 | Image hardening | Trivy before/after on `api-gateway` | Before: 13 HIGH + 1 CRITICAL (npm's bundled packages) + 4 HIGH (OpenSSL). After: 0 fixable HIGH/CRITICAL; container healthy |
 | Build #3 (`efda25f`) | Webhook push event | **SUCCESS**, 5 min 38 s; 76 tests; quality gate PASSED (coverage 83.4 %, 0 bugs, 0 vulnerabilities, 0 hotspots, 2 code smells); Trivy fs: 0 HIGH/CRITICAL; 3 images built, 0 vulnerabilities of any severity, 3 SBOMs (123 components each); publishing skipped (no credential); 6 tags cleaned from DinD |
 | Build #4 (`2fb89ad`) | Webhook push event, after fixing the 2 code smells (rule S8786) | **SUCCESS**, 2 min 56 s; 78 tests; quality gate PASSED: 0 code smells, new-code coverage 100 %, overall 85.2 % |
+| Build #6 (`2d89c05`, 2026-10-17) | Build Now, after the `.trivyignore.yaml` and text-report change | **SUCCESS**; 13/13 stages; 78 tests; quality gate PASSED; Trivy fs: CRITICAL 0, HIGH 0, MEDIUM 0, LOW 3 (missing `HEALTHCHECK`, not blocking); 3 images, 0 vulnerabilities each; 3 SBOMs (CycloneDX 1.7); 12 report artifacts archived; published to GHCR as `2d89c059ed41` and `0.1.0-2d89c05` for all three services |
 | Secrets in logs | Search of build #3 log | 84 hex strings, all `sha256:` image digests; no token |
 
 ### Known findings
@@ -187,14 +188,14 @@ Guide: [security/README.md](../security/README.md). Decisions: D-021 to D-025 in
   code, so it passes; extracting a shared package is a candidate for Phase 9.
 - Trivy LOW DS-0026: the agent image has no `HEALTHCHECK` (the inbound agent has no health endpoint; Jenkins
   shows the node's state). Not blocking.
-- Registry publishing is implemented but not yet exercised: it needs the `container-registry` credential.
+- Registry publishing: verified by build #6 with the `container-registry` credential (see Verification).
 - The controller Dockerfile's explicit `USER jenkins` (Trivy DS-0002) takes effect at the next controller
   image rebuild; it does not change behaviour (the base image already runs as `jenkins`).
 - Follow-up (2026-10-16): Phase 4's `ansible/test/target/Dockerfile` broke the filesystem scan (HIGH DS-0002,
   root user; systemd needs it). Accepted for that file only in `.trivyignore.yaml` (expires 2027-04-16), which
   replaced `.trivyignore`. Trivy scans now also write text reports (`reports/trivy/*.txt`), archived by Jenkins.
   Local re-run at `985f55b`: Trivy fs 0 HIGH/CRITICAL after the exception; 3 images 0 vulnerabilities, 3 SBOMs
-  (CycloneDX 1.7, 122 components each). Not yet confirmed by a Jenkins build.
+  (CycloneDX 1.7, 122 components each). Confirmed by Jenkins build #6 (`2d89c05`, see Verification).
 
 ## Phase 4 - Ansible automation — **Complete**
 
