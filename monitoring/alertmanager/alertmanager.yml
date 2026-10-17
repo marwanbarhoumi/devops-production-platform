@@ -1,0 +1,30 @@
+# Alertmanager configuration for devops-production-platform (monitoring/docker-compose.yml).
+# The webhook URL is read from the Compose secret "alertmanager_webhook_url" (the file named by
+# ALERTMANAGER_WEBHOOK_URL_FILE in monitoring/.env) each time a notification is sent; it is never stored here.
+# Validate: docker run --rm -v "${PWD}/monitoring/alertmanager:/cfg:ro" --entrypoint amtool prom/alertmanager:v0.34.1 check-config /cfg/alertmanager.yml
+
+route:
+  receiver: webhook
+  group_by: [alertname, service]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # Critical alerts are not batched with the default 30 s wait.
+    - matchers: ['severity="critical"']
+      receiver: webhook
+      group_wait: 10s
+      repeat_interval: 1h
+
+receivers:
+  - name: webhook
+    webhook_configs:
+      - url_file: /run/secrets/alertmanager_webhook_url
+        send_resolved: true
+        max_alerts: 20
+
+inhibit_rules:
+  # A service that is down also fails its scrape: report it once, as ServiceDown.
+  - source_matchers: ['alertname="ServiceDown"']
+    target_matchers: ['alertname="PrometheusTargetDown"']
+    equal: [instance]

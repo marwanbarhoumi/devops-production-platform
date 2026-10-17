@@ -1,0 +1,306 @@
+{
+  "uid": "dpp-platform-overview",
+  "title": "Platform overview",
+  "description": "RED metrics, resources and alerts for api-gateway, product-service and order-service. User traffic excludes the probe endpoints /health, /ready and /metrics.",
+  "tags": ["devops-production-platform", "prometheus"],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "version": 1,
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(up{job=\"platform-services\"}, service)", "refId": "service" },
+        "definition": "label_values(up{job=\"platform-services\"}, service)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "text": ["All"], "value": ["$__all"] },
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Service availability",
+      "description": "1 = Prometheus scraped the service successfully (job platform-services).",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "up{job=\"platform-services\", service=~\"$service\"}", "legendFormat": "{{service}}", "instant": true }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "value_and_name", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Requests per second",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_requests_total{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\"}[$__rate_interval])) or vector(0)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "5xx error rate",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "(sum(rate(http_requests_total{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\", status_code=~\"5..\"}[$__rate_interval])) or vector(0)) / sum(rate(http_requests_total{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\"}[$__rate_interval]))" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "noValue": "no traffic",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.01 }, { "color": "red", "value": 0.05 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "p95 latency",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\"}[$__rate_interval])))" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "noValue": "no traffic",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.5 }, { "color": "red", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Firing alerts",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "count(ALERTS{alertstate=\"firing\"}) or vector(0)", "instant": true }
+      ],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Requests per second by service",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (service) (rate(http_requests_total{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\"}[$__rate_interval]))", "legendFormat": "{{service}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "HTTP 5xx error rate by service",
+      "description": "Share of user requests answered with a 5xx status. The HighErrorRate alert fires above 5 % for 2 minutes.",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "(sum by (service) (rate(http_requests_total{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\", status_code=~\"5..\"}[$__rate_interval])) or 0 * sum by (service) (rate(http_requests_total{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\"}[$__rate_interval]))) / sum by (service) (rate(http_requests_total{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\"}[$__rate_interval]))", "legendFormat": "{{service}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": { "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "transparent", "value": null }, { "color": "red", "value": 0.05 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Request latency (p50 / p95 / p99)",
+      "description": "From the http_request_duration_seconds histogram. The HighLatency alert fires when p95 stays above 1 s for 10 minutes.",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (service, le) (rate(http_request_duration_seconds_bucket{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\"}[$__rate_interval])))", "legendFormat": "{{service}} p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\"}[$__rate_interval])))", "legendFormat": "{{service}} p95" },
+        { "refId": "C", "expr": "histogram_quantile(0.99, sum by (service, le) (rate(http_request_duration_seconds_bucket{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\"}[$__rate_interval])))", "legendFormat": "{{service}} p99" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": { "fillOpacity": 0, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "transparent", "value": null }, { "color": "red", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Responses by status code",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (service, status_code) (rate(http_requests_total{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\"}[$__rate_interval]))", "legendFormat": "{{service}} {{status_code}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 30, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "4xx responses per second (client errors)",
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (service, route, status_code) (rate(http_requests_total{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\", status_code=~\"4..\"}[$__rate_interval]))", "legendFormat": "{{service}} {{route}} {{status_code}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["max"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "5xx responses per second (server errors)",
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (service, route, status_code) (rate(http_requests_total{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\", status_code=~\"5..\"}[$__rate_interval]))", "legendFormat": "{{service}} {{route}} {{status_code}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "noValue": "No 5xx responses", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["max"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "CPU usage (share of the 0.50 CPU container limit)",
+      "description": "rate(process_cpu_seconds_total) divided by the 0.50 CPU limit from docker-compose.yml. HighCPU fires above 80 % for 10 minutes.",
+      "gridPos": { "x": 0, "y": 29, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "rate(process_cpu_seconds_total{job=\"platform-services\", service=~\"$service\"}[$__rate_interval]) / 0.5", "legendFormat": "{{service}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": { "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "transparent", "value": null }, { "color": "red", "value": 0.8 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Memory (resident set and V8 heap; limit 256 MiB)",
+      "description": "HighMemory fires when resident memory stays above 85 % of the 256 MiB container limit for 10 minutes.",
+      "gridPos": { "x": 12, "y": 29, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "process_resident_memory_bytes{job=\"platform-services\", service=~\"$service\"}", "legendFormat": "{{service}} resident" },
+        { "refId": "B", "expr": "nodejs_heap_size_used_bytes{job=\"platform-services\", service=~\"$service\"}", "legendFormat": "{{service}} heap used" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "custom": { "fillOpacity": 0, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "transparent", "value": null }, { "color": "red", "value": 228170137 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 14,
+      "type": "bargauge",
+      "title": "Request volume by service (selected time range)",
+      "gridPos": { "x": 0, "y": 37, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (service) (increase(http_requests_total{job=\"platform-services\", service=~\"$service\", route!~\"/health|/ready|/metrics\"}[$__range]))", "legendFormat": "{{service}}", "instant": true }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Gateway upstream calls by outcome",
+      "description": "gateway_upstream_requests_total: success, timeout, unavailable, invalid_response, rejected.",
+      "gridPos": { "x": 8, "y": 37, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (upstream, outcome) (rate(gateway_upstream_requests_total{job=\"platform-services\"}[$__rate_interval]))", "legendFormat": "{{upstream}} {{outcome}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Event loop lag (p99)",
+      "description": "A blocked Node.js event loop delays every request on that service.",
+      "gridPos": { "x": 16, "y": 37, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "nodejs_eventloop_lag_p99_seconds{job=\"platform-services\", service=~\"$service\"}", "legendFormat": "{{service}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0, "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Firing alerts",
+      "gridPos": { "x": 0, "y": 45, "w": 24, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "ALERTS{alertstate=\"firing\"}", "instant": true, "format": "table" }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "alertstate": true }, "indexByName": { "alertname": 0, "severity": 1, "service": 2, "instance": 3, "job": 4 } } }
+      ],
+      "fieldConfig": { "defaults": { "noValue": "No alerts firing" }, "overrides": [] },
+      "options": { "showHeader": true, "cellHeight": "sm" }
+    }
+  ]
+}

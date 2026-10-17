@@ -1,0 +1,13 @@
+apiVersion: 1
+
+# Dashboards are files in monitoring/grafana/dashboards/ (version-controlled). Changes made in the UI are not
+# saved; export the JSON and commit it instead.
+providers:
+  - name: platform
+    folder: devops-production-platform
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana-dashboards

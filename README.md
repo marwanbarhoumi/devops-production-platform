@@ -13,7 +13,8 @@ Prometheus/Grafana/Alertmanager monitoring, and documented deployment and rollba
 | 2 | CI with Jenkins: `Jenkinsfile`, local controller + build agent, JUnit reports, disposable test database | **Complete** ([jenkins/README.md](jenkins/README.md)) |
 | 3 | DevSecOps: coverage, SonarQube quality gate, Trivy scans, image build + SBOM, GHCR publishing | **Complete** ([security/README.md](security/README.md)); registry push needs a GHCR token |
 | 4 | Ansible: containerized controller, inventories, `common` and `docker_engine` roles, safety checks, local end-to-end test | **Complete** ([ansible/README.md](ansible/README.md)); no real VM configured yet |
-| 5-10 | Kubernetes, Helm, CD, monitoring, hardening, portfolio | Pending |
+| 8 | Monitoring and alerting: Prometheus, Grafana dashboard, Alertmanager, 6 tested alert rules (Docker Compose) | **Complete** ([monitoring/README.md](monitoring/README.md)); Kubernetes metrics follow with Phase 5 |
+| 5-7, 9-10 | Kubernetes, Helm, CD, hardening, portfolio | Pending |
 
 See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) for the full roadmap and verification results,
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the system design and
@@ -62,8 +63,9 @@ devops-production-platform/
 ├── jenkins/                  # local Jenkins: controller + agent + DinD (docker-compose.yml, README)
 ├── security/                 # SonarQube stack + bootstrap, security guide (Phase 3)
 ├── ansible/                  # Ansible controller (container), inventories, roles, playbooks, local test (Phase 4)
+├── monitoring/               # Prometheus, Grafana, Alertmanager stack, alert rules + tests, dashboard (Phase 8)
 ├── docs/                     # PROJECT_PLAN, ARCHITECTURE, DECISIONS
-├── kubernetes/ helm/ monitoring/   # future phases (placeholders)
+├── kubernetes/ helm/         # future phases (placeholders)
 ├── Jenkinsfile               # CI pipeline
 ├── sonar-project.properties  # SonarQube analysis settings
 ├── .trivyignore.yaml         # accepted Trivy findings (path-scoped, with expiry)
@@ -250,6 +252,25 @@ process_resident_memory_bytes{service="product-service"} 83128320
 
 Labels are bounded to keep cardinality low: routes are recorded as patterns (`/products/:id`),
 unknown paths collapse into `route="unmatched"`.
+
+### Monitoring stack (Prometheus, Grafana, Alertmanager)
+
+A separate Compose project in `monitoring/` scrapes these endpoints, shows them on a Grafana dashboard and
+alerts on availability, error rate, latency, CPU and memory. Start it after the application stack:
+
+```powershell
+Copy-Item monitoring/.env.example monitoring/.env     # once; set GRAFANA_ADMIN_PASSWORD
+docker compose -f monitoring/docker-compose.yml up -d --wait
+```
+
+| UI | Address | Notes |
+| --- | --- | --- |
+| Grafana | <http://localhost:3000> | Login from `monitoring/.env`; dashboard **Platform overview** |
+| Prometheus | <http://localhost:9090/targets> | All 6 targets should be UP; alerts at `/alerts` |
+| Alertmanager | <http://localhost:9093> | Active alerts, silences; notifications go to a webhook URL kept in a git-ignored file |
+
+All three are bound to 127.0.0.1. Alert rules, runbooks, notification setup and alert tests:
+[monitoring/README.md](monitoring/README.md).
 
 ## 8. Test, lint, type-check and build
 

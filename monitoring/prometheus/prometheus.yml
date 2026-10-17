@@ -1,0 +1,51 @@
+# Prometheus configuration for devops-production-platform (monitoring/docker-compose.yml).
+# Targets are Compose service names: the application services on the shared application network,
+# the monitoring components on the dpp-monitoring network. Reload after editing:
+#   docker compose -f monitoring/docker-compose.yml kill -s SIGHUP prometheus
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 5s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # The services already label every series with `service` (prom-client default label). honor_labels keeps
+  # that label as is; the target label below is what `up` and the scrape health series carry.
+  - job_name: platform-services
+    honor_labels: true
+    static_configs:
+      - targets: ["api-gateway:7000"]
+        labels:
+          service: api-gateway
+      - targets: ["product-service:7001"]
+        labels:
+          service: product-service
+      - targets: ["order-service:7002"]
+        labels:
+          service: order-service
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+        labels:
+          service: prometheus
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+        labels:
+          service: alertmanager
+
+  - job_name: grafana
+    static_configs:
+      - targets: ["grafana:3000"]
+        labels:
+          service: grafana

@@ -175,3 +175,30 @@ The roles prepare a server to run containers (baseline packages, unattended secu
 and Compose from Docker's verified repository). They will provide the hosts for later phases. The local test
 target (`--profile test`) is a systemd Ubuntu container on the project's own network. Details:
 [ansible/README.md](../ansible/README.md); rationale: DECISIONS D-026 to D-029.
+
+## Observability (Prometheus, Grafana, Alertmanager)
+
+```text
+ network devops-production-platform-backend         network dpp-monitoring (Compose project dpp-monitoring)
+ api-gateway:7000  product-service:7001             ┌────────────┐ alerts ┌──────────────┐ webhook (URL from a
+ order-service:7002   /metrics ◄── scrape 15s ───── │ Prometheus │ ─────► │ Alertmanager │ ───► git-ignored file)
+                                                    └─────▲──────┘        └──────────────┘
+                                                          │ PromQL   Grafana (provisioned data source + dashboard)
+```
+
+| Service | Image | Published | Health check | Volume |
+| --- | --- | --- | --- | --- |
+| `prometheus` | `prom/prometheus:v3.15.0` (digest-pinned) | `127.0.0.1:9090` | `/-/ready` | `dpp-monitoring-prometheus-data` (15 d / 2 GB) |
+| `alertmanager` | `prom/alertmanager:v0.34.1` (digest-pinned) | `127.0.0.1:9093` | `/-/ready` | `dpp-monitoring-alertmanager-data` |
+| `grafana` | `grafana/grafana:13.2.4` (digest-pinned) | `127.0.0.1:3000` | `/api/health` | `dpp-monitoring-grafana-data` |
+
+The stack (`monitoring/docker-compose.yml`) is a separate Compose project, like Jenkins and SonarQube, and uses
+the same container hardening as the services. Only Prometheus joins the application network; it scrapes the
+three services by Compose service name, plus Prometheus, Alertmanager and Grafana themselves. The scraped
+metrics are the services' existing prom-client metrics (D-011): RED metrics per route pattern, gateway upstream
+outcomes and Node.js process metrics. Six alert rules (availability, 5xx error rate, p95 latency, CPU and memory
+relative to the Compose limits) are unit-tested with `promtool`; Alertmanager groups them per alert and service,
+inhibits the generic target-down alert while ServiceDown fires, and sends firing and resolved notifications to
+a webhook. Grafana's data source and "Platform overview" dashboard are provisioned from files. PostgreSQL
+internals and Docker-level container metrics are not collected (D-030). Details:
+[monitoring/README.md](../monitoring/README.md).

@@ -1,0 +1,88 @@
+# Alert rules for devops-production-platform. Unit tests: monitoring/prometheus/tests/platform-alerts.test.yml
+# Runbooks: monitoring/README.md, section "Alerts and runbooks".
+#
+# User traffic excludes the probe endpoints (/health, /ready, /metrics): health checks and scrapes would
+# otherwise dilute error rates and latency.
+
+groups:
+  - name: platform-availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job="platform-services"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} is down"
+          description: "Prometheus cannot scrape {{ $labels.service }} ({{ $labels.instance }}) for more than 1 minute: the container is stopped, unhealthy or unreachable on the application network."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#servicedown
+
+      # Any scrape target, including the monitoring components themselves. For the application services
+      # Alertmanager suppresses it while ServiceDown fires for the same instance (inhibit rule).
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scrape target {{ $labels.instance }} ({{ $labels.job }}) is down"
+          description: "Prometheus has failed to scrape {{ $labels.instance }} in job {{ $labels.job }} for more than 3 minutes; its metrics and alerts are blind."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#prometheustargetdown
+
+  - name: platform-traffic
+    rules:
+      # At least 0.05 requests/s (15 requests in 5 minutes), so a single failed request on an idle service
+      # does not page anyone.
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum by (service) (rate(http_requests_total{job="platform-services", route!~"/health|/ready|/metrics", status_code=~"5.."}[5m]))
+            /
+            sum by (service) (rate(http_requests_total{job="platform-services", route!~"/health|/ready|/metrics"}[5m]))
+          ) > 0.05
+          and
+          sum by (service) (rate(http_requests_total{job="platform-services", route!~"/health|/ready|/metrics"}[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }}: {{ $value | humanizePercentage }} of requests fail with 5xx"
+          description: "More than 5 % of {{ $labels.service }}'s requests returned a 5xx status over the last 5 minutes."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#higherrorrate
+
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service, le) (rate(http_request_duration_seconds_bucket{job="platform-services", route!~"/health|/ready|/metrics"}[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }}: p95 latency {{ $value | humanizeDuration }}"
+          description: "The 95th percentile response time of {{ $labels.service }} has been above 1 s for 10 minutes."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#highlatency
+
+  - name: platform-resources
+    rules:
+      # Each service container is limited to 0.50 CPU (x-node-service in docker-compose.yml): 0.4 is 80 %.
+      - alert: HighCPU
+        expr: rate(process_cpu_seconds_total{job="platform-services"}[5m]) > 0.4
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} uses {{ printf \"%.2f\" $value }} CPU cores"
+          description: "{{ $labels.service }} has used more than 80 % of its 0.50 CPU limit for 10 minutes; the container is being throttled."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#highcpu
+
+      # Each service container is limited to 256 MiB (x-node-service in docker-compose.yml): alert at 85 %.
+      - alert: HighMemory
+        expr: process_resident_memory_bytes{job="platform-services"} > 0.85 * 268435456
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} uses {{ $value | humanize1024 }}B of memory"
+          description: "{{ $labels.service }}'s resident memory has been above 85 % of its 256 MiB limit for 10 minutes; the kernel OOM-kills the container at the limit."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#highmemory

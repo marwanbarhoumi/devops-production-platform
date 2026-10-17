@@ -328,6 +328,29 @@ overlayfs cannot be stacked on the container's own overlay root.
 **Trade-off:** a container is not a VM: kernel, boot, cloud-init, firewall and real network behaviour are not
 tested. The first run against a real server must start with `--check --diff`.
 
+## D-030 Observability as a separate Compose stack, without host-level exporters
+
+**Decision:** Prometheus, Alertmanager and Grafana run in their own Compose project (`monitoring/`,
+`dpp-monitoring`), with digest-pinned images, the D-012 hardening, named volumes and `127.0.0.1`-only ports.
+Prometheus joins the application network as an external network and scrapes the services' existing `/metrics`
+endpoints by service name; no new application metric was needed. Alert thresholds for CPU and memory are derived
+from the Compose resource limits and use the prom-client process metrics. The Alertmanager webhook URL is a
+Compose file secret read with `url_file`, defaulting to a tracked empty file.
+
+**Why:** a separate project can be started, stopped and upgraded without touching the application, matching the
+Jenkins and SonarQube stacks. It also keeps the required Grafana password out of the root Compose file: a
+`${VAR:?}` there fails `docker compose config` even for a profiled service, which would break the application
+for anyone without the new variable. The webhook URL usually embeds a token and Alertmanager does not expand
+environment variables in its configuration, so it is read from a git-ignored file; read-only containers only
+accept file-based Compose secrets.
+
+**Not included:** cAdvisor needs the host Docker socket and host filesystem mounts, which D-016 rules out for
+this project; each container runs a single Node.js process, so process metrics measure the container's usage.
+`postgres_exporter` needs a dedicated database role and credentials and the init script only runs on a new
+volume; database reachability is covered by the services' readiness checks and ServiceDown. Kubernetes metrics
+(kube-state-metrics, node-exporter, pod restarts) come with Phase 5. Prometheus and Alertmanager have no
+authentication, which is acceptable only while they are bound to `127.0.0.1`.
+
 ## Roadmap changes
 
 Any change to [PROJECT_PLAN.md](PROJECT_PLAN.md) phases is recorded here.
@@ -340,3 +363,6 @@ Any change to [PROJECT_PLAN.md](PROJECT_PLAN.md) phases is recorded here.
   Jenkins agent role moves to Phase 7, which decides how deployments reach servers, and Kubernetes node
   prerequisites move to Phase 5, where the cluster type (local or kubeadm) is chosen. Server hardening
   (SSH, firewall) moves to Phase 9 (D-028). Ansible Vault is documented as a pattern; no role needs a secret yet.
+- **2026-10-17:** Phase 8 is delivered for the Docker Compose environment before Phases 5-7. Kubernetes metrics
+  (kube-state-metrics, node-exporter), pod-restart alerts and cluster dashboards move to Phase 5, where the
+  cluster exists; PostgreSQL metrics (`postgres_exporter`) move to Phase 9 with the database work (D-030).

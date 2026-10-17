@@ -1,0 +1,155 @@
+# devops-production-platform - observability stack (Phase 8)
+#
+#   docker compose up -d --build --wait                        # application stack first (repository root)
+#   Copy-Item monitoring/.env.example monitoring/.env          # then set GRAFANA_ADMIN_PASSWORD (and optionally a webhook)
+#   docker compose -f monitoring/docker-compose.yml up -d --wait
+#
+# Separate Compose project ("dpp-monitoring"), like jenkins/ and security/sonarqube/: it can be started,
+# stopped and upgraded without touching the application containers. Prometheus joins the application's
+# network (devops-production-platform-backend) and scrapes the services by their Compose service names.
+# Prometheus, Alertmanager and Grafana are published on 127.0.0.1 only; Prometheus and Alertmanager have no
+# authentication, so do not publish them on other interfaces.
+
+name: dpp-monitoring
+
+x-hardening: &hardening
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  prometheus:
+    <<: *hardening
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-15d}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-2GB}
+      - --web.external-url=http://localhost:${PROMETHEUS_HOST_PORT:-9090}
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_HOST_PORT:-9090}:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/ready"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - monitoring
+      - app
+    depends_on:
+      alertmanager:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+
+  alertmanager:
+    <<: *hardening
+    image: prom/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=http://localhost:${ALERTMANAGER_HOST_PORT:-9093}
+      # Single instance: no gossip cluster to join.
+      - --cluster.listen-address=
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    # Read by the webhook receiver when it sends (url_file); the URL never appears in a tracked file.
+    secrets:
+      - source: alertmanager_webhook_url
+        target: alertmanager_webhook_url
+    ports:
+      - "127.0.0.1:${ALERTMANAGER_HOST_PORT:-9093}:9093"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9093/-/ready"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
+  grafana:
+    <<: *hardening
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+    environment:
+      # Applied when the Grafana database is created (first start); later changes: see monitoring/README.md.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in monitoring/.env}
+      GF_SERVER_ROOT_URL: http://localhost:${GRAFANA_HOST_PORT:-3000}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_LOG_MODE: console
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana-dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    networks:
+      - monitoring
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+
+networks:
+  monitoring:
+    name: dpp-monitoring
+  # Created by the application stack (docker-compose.yml at the repository root); only Prometheus joins it.
+  app:
+    name: devops-production-platform-backend
+    external: true
+
+volumes:
+  prometheus-data:
+    name: dpp-monitoring-prometheus-data
+  alertmanager-data:
+    name: dpp-monitoring-alertmanager-data
+  grafana-data:
+    name: dpp-monitoring-grafana-data
+
+secrets:
+  # A file holding only the webhook URL, e.g. ./secrets/alertmanager-webhook-url (git-ignored). The default is
+  # an empty tracked file: no notification channel. Compose supports only file secrets for read-only containers.
+  alertmanager_webhook_url:
+    file: ${ALERTMANAGER_WEBHOOK_URL_FILE:-./alertmanager/webhook-url.empty}

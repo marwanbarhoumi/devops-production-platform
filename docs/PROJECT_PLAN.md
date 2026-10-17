@@ -15,7 +15,7 @@ Status legend: **Complete** · In progress · Pending
 | 5 | Kubernetes | Pending |
 | 6 | Helm | Pending |
 | 7 | Continuous deployment | Pending |
-| 8 | Monitoring and alerting | Pending |
+| 8 | Monitoring and alerting | **Complete** (2026-10-17) for Docker Compose; Kubernetes metrics follow with Phase 5 |
 | 9 | Platform hardening | Pending |
 | 10 | Portfolio completion | Pending |
 
@@ -263,6 +263,8 @@ Jenkins agent role (Phase 7), Kubernetes node prerequisites (Phase 5), SSH/firew
 - PostgreSQL StatefulSet with PersistentVolumeClaim (or an external database), migration strategy
 - Ingress for the gateway; RBAC and service accounts
 - Ansible role for Kubernetes node prerequisites, if the chosen cluster runs on managed servers (from Phase 4)
+- Cluster monitoring: Prometheus scraping in Kubernetes, kube-state-metrics, node-exporter, pod-restart alerts,
+  cluster dashboards (from Phase 8)
 
 ## Phase 6 - Helm — Pending
 
@@ -277,11 +279,51 @@ Jenkins agent role (Phase 7), Kubernetes node prerequisites (Phase 5), SSH/firew
 - Rolling update strategy and automated rollback (`helm rollback`) on failed verification
 - Ansible role for a Jenkins agent on a managed server, if deployments need one (from Phase 4)
 
-## Phase 8 - Monitoring and alerting — Pending
+## Phase 8 - Monitoring and alerting — **Complete** (Docker Compose)
 
-- Prometheus scraping service `/metrics` and Kubernetes metrics (kube-state-metrics, node-exporter)
-- Grafana dashboards: RED metrics per service, upstream health, database, cluster resources
-- Alertmanager with actionable alerts (error rate, latency, availability, pod restarts, saturation) and runbooks
+Prometheus, Grafana and Alertmanager for the Compose environment. Guide:
+[monitoring/README.md](../monitoring/README.md). Decision: D-030 in [DECISIONS.md](DECISIONS.md).
+
+### Deliverables
+
+- [x] Separate Compose project `monitoring/docker-compose.yml` (`dpp-monitoring`): Prometheus v3.15.0,
+      Alertmanager v0.34.1, Grafana 13.2.4, digest-pinned; read-only, no capabilities, non-root; health checks on
+      `/-/ready` and `/api/health`; resource limits; named volumes; ports bound to `127.0.0.1` (9090, 9093, 3000)
+- [x] Prometheus scrapes the three services by Compose service name on the application network, plus itself,
+      Alertmanager and Grafana (6 targets, 15 s); retention 15 days / 2 GB, configurable
+- [x] Six alert rules with severities and runbooks: ServiceDown, PrometheusTargetDown, HighErrorRate,
+      HighLatency, HighCPU, HighMemory; `promtool` unit tests for all of them
+- [x] Alertmanager: grouping per alert and service, faster critical route, inhibit rule, webhook receiver with
+      resolved notifications; the URL comes from a git-ignored file through a Compose secret
+- [x] Grafana: provisioned Prometheus data source and "Platform overview" dashboard (17 panels: availability,
+      RED metrics, status codes, gateway upstream outcomes, CPU and memory against the container limits, event
+      loop lag, firing alerts); admin password from `monitoring/.env`, sign-up and anonymous access disabled
+- [x] No application change: the services' existing metrics (Phase 1) were sufficient
+- [ ] Database metrics (`postgres_exporter`): moved to Phase 9
+- [ ] Kubernetes metrics, pod-restart alerts, cluster dashboards: moved to Phase 5
+
+### Verification (2026-10-17, Windows 11, Docker Desktop, Compose v5)
+
+| Check | Command / method | Result |
+| --- | --- | --- |
+| Configuration | `promtool check config`, `promtool check rules`, `amtool check-config`, `docker compose config` (both stacks) | Pass; 6 rules |
+| Alert unit tests | `promtool test rules tests/platform-alerts.test.yml` | Pass: every rule fires when expected and not before; probe-route 503s and low traffic ignored |
+| Stack health | `docker compose -f monitoring/docker-compose.yml up -d --wait` | 3/3 containers healthy |
+| Targets | Prometheus `/api/v1/targets` | 6/6 UP |
+| Alertmanager link | Prometheus `/api/v1/alertmanagers` | `http://alertmanager:9093/api/v2/alerts` active |
+| Grafana | `/api/health`, data source health, dashboard API, `/api/ds/query` | OK; data source queries Prometheus; dashboard provisioned with 17 panels; anonymous API request rejected (401) |
+| Metrics follow traffic | 40 rounds of 5 requests through the gateway (200, 404, 400 responses) | Prometheus counters matched the client's counts exactly per service and status code |
+| Controlled failure | `docker compose stop product-service` with ~0.5 requests/s through the gateway, then `start` | Target DOWN within one scrape; ServiceDown pending, then **firing** after 1 min; HighErrorRate on api-gateway (503/504) **firing**; PrometheusTargetDown fired in Prometheus but was inhibited in Alertmanager; a test webhook received FIRING for ServiceDown and HighErrorRate, then RESOLVED for both after the restart (ServiceDown ~1.5 min, HighErrorRate ~3 min); product-service healthy again |
+| Reload and persistence | `kill -s SIGHUP prometheus`; recreate the Prometheus container | Configuration reloaded; stored samples kept |
+| Existing checks | `npm run lint`, `typecheck`, `test:ci` (70 tests), `test:integration:ci` (8 tests) | Pass |
+| DevSecOps unchanged | `git diff` on Jenkinsfile, Trivy, SonarQube, Ansible, services, root Compose; Trivy fs scan with the pipeline's scanners | No changes; 0 HIGH/CRITICAL in tracked files |
+
+### Not verified / remaining
+
+- No real notification channel: notifications were tested against a temporary local webhook receiver. A team
+  webhook (chat or incident tool) needs a URL from the owner (monitoring/README.md, section 5).
+- HighLatency, HighCPU and HighMemory were verified by unit tests only, not by load on the real stack.
+- PostgreSQL internals and Docker-level container metrics are not collected (D-030).
 
 ## Phase 9 - Platform hardening — Pending
 
@@ -289,6 +331,7 @@ Jenkins agent role (Phase 7), Kubernetes node prerequisites (Phase 5), SSH/firew
 - NetworkPolicies (only the gateway reachable from ingress; services reachable only by their callers)
 - Pod security standards, resource quotas and limit ranges
 - Database backup/restore and disaster-recovery considerations; authentication and rate limiting at the edge
+- PostgreSQL metrics with `postgres_exporter` and a dedicated monitoring role (from Phase 8)
 - Server hardening with Ansible: SSH daemon settings, firewall, users (from Phase 4)
 
 ## Phase 10 - Portfolio completion — Pending
