@@ -1,0 +1,28 @@
+# Observability configuration shared by both runtimes. Docker Compose (docker-compose.yml) mounts these files
+# directly; the Kubernetes stack (kubernetes/monitoring) includes this kustomization, which turns the same files
+# into ConfigMaps. Kubernetes-only files: prometheus/prometheus-kubernetes.yml, prometheus/rules-kubernetes/,
+# grafana/dashboards-kubernetes/.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus.yml=prometheus/prometheus-kubernetes.yml
+  - name: prometheus-rules
+    files:
+      - prometheus/rules/platform-alerts.yml
+      - prometheus/rules-kubernetes/kubernetes-alerts.yml
+  - name: alertmanager-config
+    files:
+      - alertmanager/alertmanager.yml
+  - name: grafana-datasources
+    files:
+      - grafana/provisioning/datasources/prometheus.yml
+  - name: grafana-dashboard-providers
+    files:
+      - grafana/provisioning/dashboards/dashboards.yml
+  - name: grafana-dashboards
+    files:
+      - grafana/dashboards/platform-overview.json
+      - grafana/dashboards-kubernetes/kubernetes-platform.json

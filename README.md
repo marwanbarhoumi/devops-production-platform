@@ -13,8 +13,9 @@ Prometheus/Grafana/Alertmanager monitoring, and documented deployment and rollba
 | 2 | CI with Jenkins: `Jenkinsfile`, local controller + build agent, JUnit reports, disposable test database | **Complete** ([jenkins/README.md](jenkins/README.md)) |
 | 3 | DevSecOps: coverage, SonarQube quality gate, Trivy scans, image build + SBOM, GHCR publishing | **Complete** ([security/README.md](security/README.md)); registry push needs a GHCR token |
 | 4 | Ansible: containerized controller, inventories, `common` and `docker_engine` roles, safety checks, local end-to-end test | **Complete** ([ansible/README.md](ansible/README.md)); no real VM configured yet |
-| 8 | Monitoring and alerting: Prometheus, Grafana dashboard, Alertmanager, 6 tested alert rules (Docker Compose) | **Complete** ([monitoring/README.md](monitoring/README.md)); Kubernetes metrics follow with Phase 5 |
-| 5-7, 9-10 | Kubernetes, Helm, CD, hardening, portfolio | Pending |
+| 8 | Monitoring and alerting: Prometheus, Grafana dashboard, Alertmanager, 6 tested alert rules (Docker Compose) | **Complete** ([monitoring/README.md](monitoring/README.md)) |
+| 5 | Kubernetes (Minikube, Kustomize): services, PostgreSQL StatefulSet, probes, RBAC, NetworkPolicies, Prometheus with kube-state-metrics and node-exporter, 8 tested Kubernetes alerts, "Kubernetes platform" dashboard | **Complete** ([kubernetes/README.md](kubernetes/README.md)); validated on Minikube with real failure tests |
+| 6-7, 9-10 | Helm, CD, hardening, portfolio | Pending |
 
 See [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) for the full roadmap and verification results,
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the system design and
@@ -63,9 +64,10 @@ devops-production-platform/
 ├── jenkins/                  # local Jenkins: controller + agent + DinD (docker-compose.yml, README)
 ├── security/                 # SonarQube stack + bootstrap, security guide (Phase 3)
 ├── ansible/                  # Ansible controller (container), inventories, roles, playbooks, local test (Phase 4)
-├── monitoring/               # Prometheus, Grafana, Alertmanager stack, alert rules + tests, dashboard (Phase 8)
+├── monitoring/               # Prometheus, Grafana, Alertmanager stack, alert rules + tests, dashboards (Phase 8, 5)
+├── kubernetes/               # Kustomize manifests: app/ (devops-platform), monitoring/ (Phase 5)
 ├── docs/                     # PROJECT_PLAN, ARCHITECTURE, DECISIONS
-├── kubernetes/ helm/         # future phases (placeholders)
+├── helm/                     # future phase (placeholder)
 ├── Jenkinsfile               # CI pipeline
 ├── sonar-project.properties  # SonarQube analysis settings
 ├── .trivyignore.yaml         # accepted Trivy findings (path-scoped, with expiry)
@@ -271,6 +273,13 @@ docker compose -f monitoring/docker-compose.yml up -d --wait
 
 All three are bound to 127.0.0.1. Alert rules, runbooks, notification setup and alert tests:
 [monitoring/README.md](monitoring/README.md).
+
+### Kubernetes (optional)
+
+The same images and monitoring configuration also run on a local Kubernetes cluster (Minikube), with
+kube-state-metrics, node-exporter, Kubernetes alerts and a "Kubernetes platform" dashboard. Compose stays the
+default way to run the platform. Cluster setup, private image access, deployment and port-forwards:
+[kubernetes/README.md](kubernetes/README.md).
 
 ## 8. Test, lint, type-check and build
 

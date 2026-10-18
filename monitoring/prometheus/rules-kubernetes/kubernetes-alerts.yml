@@ -1,0 +1,141 @@
+# Kubernetes alert rules, loaded only by the Kubernetes Prometheus (kubernetes/monitoring) together with
+# rules/platform-alerts.yml. Unit tests: monitoring/prometheus/tests/kubernetes-alerts.test.yml
+# Runbooks: monitoring/README.md, section "Kubernetes alerts".
+#
+# Sources: kube-state-metrics (object state) and Prometheus `up`. Container-level alerts copy the container
+# name into `service` (the application containers are named after their service), so Alertmanager groups
+# them with the service's other alerts.
+
+groups:
+  - name: kubernetes-workloads
+    rules:
+      - alert: PodCrashLooping
+        expr: |
+          label_replace(
+            max_over_time(kube_pod_container_status_waiting_reason{job="kube-state-metrics", reason="CrashLoopBackOff"}[5m]) >= 1,
+            "service", "$1", "container", "(.+)"
+          )
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.pod }}: container {{ $labels.container }} is crash looping"
+          description: "Container {{ $labels.container }} of pod {{ $labels.namespace }}/{{ $labels.pod }} has been in CrashLoopBackOff for more than 5 minutes: it keeps exiting or failing its liveness probe."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#podcrashlooping
+
+      # Restarts that recover between scrapes never show CrashLoopBackOff (e.g. OOM kills every few minutes).
+      - alert: PodRestartingFrequently
+        expr: |
+          label_replace(
+            increase(kube_pod_container_status_restarts_total{job="kube-state-metrics"}[15m]) > 3,
+            "service", "$1", "container", "(.+)"
+          )
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.pod }}: container {{ $labels.container }} restarted {{ printf \"%.0f\" $value }} times in 15 minutes"
+          description: "Container {{ $labels.container }} of pod {{ $labels.namespace }}/{{ $labels.pod }} restarted more than 3 times in the last 15 minutes."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#podrestartingfrequently
+
+      - alert: DeploymentReplicasUnavailable
+        expr: |
+          label_replace(
+            (kube_deployment_status_replicas_available{job="kube-state-metrics"} == 0)
+            and on (namespace, deployment)
+            (kube_deployment_spec_replicas{job="kube-state-metrics"} > 0),
+            "service", "$1", "deployment", "(.+)"
+          )
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.deployment }} has no available replica"
+          description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has had zero available (ready) replicas for more than 1 minute: its Service has no endpoint."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#deploymentreplicasunavailable
+
+      # Longer than any normal rolling update; suppressed while DeploymentReplicasUnavailable fires.
+      - alert: DeploymentReplicasMismatch
+        expr: |
+          label_replace(
+            kube_deployment_spec_replicas{job="kube-state-metrics"}
+              != kube_deployment_status_replicas_available{job="kube-state-metrics"},
+            "service", "$1", "deployment", "(.+)"
+          )
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.deployment }}: desired and available replicas differ"
+          description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has not had its desired number of available replicas for more than 10 minutes."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#deploymentreplicasmismatch
+
+      # Pending, Running or Unknown pods that are not Ready (completed pods are ignored). kube_pod_labels
+      # carries app.kubernetes.io/name (allow-listed in kube-state-metrics) as `service`.
+      - alert: KubernetesPodNotReady
+        expr: |
+          (
+            (kube_pod_status_ready{job="kube-state-metrics", condition="false"} == 1)
+            and on (namespace, pod)
+            (kube_pod_status_phase{job="kube-state-metrics", phase=~"Pending|Running|Unknown"} == 1)
+          )
+          * on (namespace, pod) group_left (service)
+          label_replace(kube_pod_labels{job="kube-state-metrics"}, "service", "$1", "label_app_kubernetes_io_name", "(.*)")
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.pod }} is not ready"
+          description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has not been Ready for more than 5 minutes and receives no Service traffic."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#kubernetespodnotready
+
+      # Any waiting reason except CrashLoopBackOff (PodCrashLooping): ImagePullBackOff, ErrImagePull,
+      # CreateContainerConfigError (missing Secret or ConfigMap key), ContainerCreating stuck on a volume, ...
+      # Aggregated per container: the reason alternates (ErrImagePull <-> ImagePullBackOff), and a per-reason
+      # series would restart the `for` timer at every switch. The current reason is looked up for the text.
+      - alert: KubernetesContainerWaiting
+        expr: |
+          label_replace(
+            (max by (namespace, pod, container) (kube_pod_container_status_waiting_reason{job="kube-state-metrics"}) == 1)
+            unless on (namespace, pod, container)
+            (kube_pod_container_status_waiting_reason{job="kube-state-metrics", reason="CrashLoopBackOff"} == 1),
+            "service", "$1", "container", "(.+)"
+          )
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.pod }}: container {{ $labels.container }} is waiting to start"
+          description: 'Container {{ $labels.container }} of pod {{ $labels.namespace }}/{{ $labels.pod }} has been waiting to start for more than 10 minutes{{ with printf "kube_pod_container_status_waiting_reason{namespace=\"%s\", pod=\"%s\", container=\"%s\"} == 1" $labels.namespace $labels.pod $labels.container | query }}, current reason {{ . | first | label "reason" }}{{ end }}.'
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#kubernetescontainerwaiting
+
+  - name: kubernetes-nodes
+    rules:
+      - alert: KubernetesNodeNotReady
+        expr: kube_node_status_condition{job="kube-state-metrics", condition="Ready", status="true"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node {{ $labels.node }} is not ready"
+          description: "Node {{ $labels.node }} has not reported Ready for more than 5 minutes; its pods are not getting traffic and will be evicted."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#kubernetesnodenotready
+
+  - name: kubernetes-monitoring
+    rules:
+      # The Kubernetes metric sources. Application pods are covered by ServiceDown, all targets by
+      # PrometheusTargetDown, which Alertmanager suppresses while this alert fires for the same instance.
+      # Both are discovered from their pods: without a pod there is no target and no `up` series at all,
+      # hence absent().
+      - alert: KubernetesTargetDown
+        expr: |
+          up{job=~"kube-state-metrics|node-exporter"} == 0
+          or absent(up{job="kube-state-metrics"})
+          or absent(up{job="node-exporter"})
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} {{ if $labels.instance }}target {{ $labels.instance }} is down{{ else }}has no scrape target{{ end }}"
+          description: "{{ if $labels.instance }}Prometheus has failed to scrape {{ $labels.job }} at {{ $labels.instance }}{{ else }}Prometheus has found no {{ $labels.job }} pod to scrape{{ end }} for more than 3 minutes; the Kubernetes alerts that depend on it cannot fire."
+          runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#kubernetestargetdown

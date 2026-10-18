@@ -12,10 +12,10 @@ Status legend: **Complete** · In progress · Pending
 | 2 | CI with Jenkins | **Complete** (2026-10-14); one-time UI setup and a public webhook endpoint remain manual |
 | 3 | CI quality and security | **Complete** (2026-10-14); GHCR publishing verified by build #6 (2026-10-17) |
 | 4 | Ansible automation | **Complete** (2026-10-14) for the local scope; a real VM still needs a host and SSH credentials |
-| 5 | Kubernetes | Pending |
+| 5 | Kubernetes | **Complete** (2026-10-18) on Minikube; HPA and Ingress moved to Phase 6 |
 | 6 | Helm | Pending |
 | 7 | Continuous deployment | Pending |
-| 8 | Monitoring and alerting | **Complete** (2026-10-17) for Docker Compose; Kubernetes metrics follow with Phase 5 |
+| 8 | Monitoring and alerting | **Complete** (2026-10-17) for Docker Compose; Kubernetes metrics delivered with Phase 5 |
 | 9 | Platform hardening | Pending |
 | 10 | Portfolio completion | Pending |
 
@@ -255,20 +255,86 @@ Reusable automation that prepares Ubuntu servers to run the platform's container
 Jenkins agent role (Phase 7), Kubernetes node prerequisites (Phase 5), SSH/firewall hardening (Phase 9). See
 "Roadmap changes" in DECISIONS.md.
 
-## Phase 5 - Kubernetes — Pending
+## Phase 5 - Kubernetes — **Complete**
 
-- Namespaces per environment; Deployments and Services for each microservice
-- ConfigMaps and Secrets; liveness/readiness probes mapped to `/health` and `/ready`
-- Resource requests and limits; HorizontalPodAutoscaler
-- PostgreSQL StatefulSet with PersistentVolumeClaim (or an external database), migration strategy
-- Ingress for the gateway; RBAC and service accounts
-- Ansible role for Kubernetes node prerequisites, if the chosen cluster runs on managed servers (from Phase 4)
-- Cluster monitoring: Prometheus scraping in Kubernetes, kube-state-metrics, node-exporter, pod-restart alerts,
-  cluster dashboards (from Phase 8)
+The platform on a local Kubernetes cluster (Minikube, Calico), from plain manifests assembled with Kustomize.
+Guide: [kubernetes/README.md](../kubernetes/README.md). Decision: D-031 in [DECISIONS.md](DECISIONS.md).
+
+### Deliverables
+
+- [x] Namespaces `devops-platform` (Pod Security `restricted` enforced) and `monitoring`
+- [x] Deployment, Service and PodDisruptionBudget per service: GHCR images with a configurable `<sha12>` tag,
+      2 replicas, rolling updates (`maxSurge: 1`, `maxUnavailable: 0`, `minReadySeconds: 45`, `preStop` pause), startup/liveness probes on
+      `/health`, readiness on `/ready` (gateway `/health`), Compose resource limits
+- [x] ConfigMaps (the services' existing variables) and Secrets from git-ignored `.env` files (`secretGenerator`)
+- [x] PostgreSQL StatefulSet with a 2Gi volume claim, the shared init script and per-service roles; migrations
+      at service startup, serialised by the existing advisory locks
+- [x] Security contexts (non-root, read-only, no capabilities, `RuntimeDefault` seccomp), no service account
+      token where the API is not used, default-deny NetworkPolicies with explicit allowed paths
+- [x] Prometheus, Alertmanager and Grafana with PVCs and the shared Compose configuration; Kubernetes service
+      discovery with namespaced Roles; kube-state-metrics (scoped ClusterRole) and node-exporter (DaemonSet)
+- [x] 8 Kubernetes alert rules with runbooks and `promtool` tests; 3 new inhibit rules; "Kubernetes platform"
+      dashboard (15 panels); the platform rules and Platform overview dashboard unchanged
+- [x] Private GHCR images pulled with an in-cluster `ghcr-pull` Secret (classic token, `read:packages` only),
+      created from a credential prompt and passed on standard input; packages stay private
+- [x] Controlled failure tests with recovery: pod deletion, no available replica, restart and crash loop, missing
+      metric source
+- [ ] HorizontalPodAutoscaler and Ingress: moved to Phase 6 (see "Roadmap changes" in DECISIONS.md)
+- [ ] Ansible role for Kubernetes node prerequisites: not needed for a local cluster
+
+### Verification (2026-10-17 and 18, Windows 11, Minikube 1.39.0, Kubernetes 1.36.4, Docker driver, Calico)
+
+| Check | Command / method | Result |
+| --- | --- | --- |
+| Rendering and admission | `kubectl kustomize`, `kubectl apply -k --dry-run=server` (both namespaces) | Pass; only Pod Security warning: node-exporter host paths (accepted) |
+| Alert rules | `promtool check rules`, `promtool test rules` (platform and Kubernetes), `amtool check-config` | Pass: 6 + 8 rules, 4 inhibit rules |
+| Trivy | Repository scan with the pipeline's scanners (vuln, secret, misconfig), HIGH/CRITICAL | 0 findings; KSV-0121 accepted for `node-exporter.yaml` only |
+| Monitoring namespace | `kubectl get pods,pvc -n monitoring` | 5 workloads Running and Ready, 3 PVCs Bound |
+| Service discovery | Prometheus `/api/v1/targets` | kube-state-metrics and node-exporter discovered by pod IP; Prometheus, Alertmanager, Grafana UP |
+| Grafana | `/api/health`, data source health, dashboard API | OK; both dashboards provisioned (17 and 15 panels) |
+| PostgreSQL | StatefulSet, init script, `pg_database` | Running as UID 70; `products_db`/`product_svc` and `orders_db`/`order_svc` created |
+| NetworkPolicies | `pg_isready`/`wget`/`net.connect` from a pod in `default`, a pod labelled product-service and an api-gateway pod | `default` → PostgreSQL and → product-service blocked; product-service → PostgreSQL allowed; api-gateway → PostgreSQL blocked, → product-service allowed (HTTP 200) |
+| Persistence | Delete `postgres-0` and the Prometheus pod; later scale PostgreSQL to 0 and back | PostgreSQL skipped initialisation and kept both databases and their rows; Prometheus kept its oldest samples |
+| GHCR pull | `ghcr-pull` Secret, `rollout restart` | First token refused (`403 Forbidden` from the GHCR token endpoint: wrong token type); with a classic `read:packages` token all 6 pods pulled `2d89c059ed41` (digests recorded) |
+| Application pods | `kubectl get pods,deploy,svc,pdb -n devops-platform` | 3 Deployments 2/2, PostgreSQL 1/1, 0 restarts; migrations applied; services resolve each other by Service name |
+| Traffic | Gateway port-forward: health, ready, list/get/create product, create/list order, 404/422/400 cases; `scripts/smoke-test.mjs` with `GATEWAY_URL` | All expected status codes; smoke test passed |
+| Targets | Prometheus `/api/v1/targets` | 11/11 UP: 6 application pods (discovered), kube-state-metrics, node-exporter, Prometheus, Alertmanager, Grafana |
+| Metrics follow traffic | 30 product reads and 10 orders through the gateway | `http_requests_total` grew by exactly 40 (api-gateway), 40 (product-service: 30 + 10 order validations), 10 (order-service) |
+| Grafana | Every panel query of both dashboards through Grafana's `/api/ds/query` | All panels return data; restart and firing-alert panels after the failure tests; only the 5xx panel stays empty (no 5xx) |
+| Pod deletion | Delete a product-service pod under ~5 requests/s | Replacement Ready in ~20 s, 269/269 requests succeeded, target replaced in Prometheus, no alert |
+| No available replica | Scale PostgreSQL to 0 for 6 minutes, then back to 1 | DeploymentReplicasUnavailable (critical) firing for product-service and order-service after ~1.5 min, KubernetesPodNotReady for the 4 pods after ~5.5 min, both in Alertmanager; gateway 503 on those routes; after restore: Ready in seconds, all alerts resolved, data intact |
+| Restarts | Liveness probe on a missing path for order-service, then `rollout undo` | PodRestartingFrequently firing after ~3.5 min, PodCrashLooping after ~8.5 min; Alertmanager inhibited PodRestartingFrequently; resolved after rollback |
+| Missing metric source | Scale kube-state-metrics to 0, then back | KubernetesTargetDown firing after 3 min ("has no scrape target") and in Alertmanager; resolved after restore |
+| Recovery | After all tests | 7/7 application pods Ready, 11/11 targets UP, 0 alerts in Prometheus and Alertmanager, 4 PVCs Bound, all rows present |
+| Existing checks | `npm run lint`, `typecheck`, `test:ci` (70 tests), `test:integration:ci` (8 tests); `docker compose config` (root, monitoring) | Pass |
+
+**Issue found and fixed on the cluster:** KubernetesContainerWaiting never fired for the image pull failures:
+the kubelet alternates `ErrImagePull` and `ImagePullBackOff`, kube-state-metrics replaces the per-reason series,
+and each switch restarted the 10-minute `for` timer. The rule now aggregates per container and looks up the
+current reason for the description; a `promtool` test with alternating reasons covers it. After the fix it fired
+on the cluster for all six waiting containers ("current reason ImagePullBackOff") and reached Alertmanager.
+
+**Issue found and fixed by the restart test:** the first run replaced *both* order-service pods with the broken
+version: each new pod passed readiness for ~30 seconds before the liveness probe killed it, which was enough for
+the rollout to count it as available and stop an old pod, so the orders API returned 503 until the rollback. The
+services now set `minReadySeconds: 45`; on the second run the rollout stalled with one crash-looping pod, the old
+pods kept serving and 285 of 285 order requests succeeded.
+
+**Issue found and fixed by the metric-source test:** KubernetesTargetDown only matched `up == 0`, but
+kube-state-metrics and node-exporter are discovered from their pods, so a missing pod removes the target instead of
+marking it down. The rule now also fires on `absent(up{job=...})`; a `promtool` test and the live test cover it.
+
+### Not verified / remaining
+
+- KubernetesNodeNotReady and DeploymentReplicasMismatch on a real failure: a node test is unsafe on a single node
+  (Prometheus runs on it), and the mismatch needs 10 minutes of partial availability. Both are covered by
+  `promtool` tests; DeploymentReplicasMismatch also fired (and was inhibited) during the image pull failure.
+- No notification channel: Alertmanager has no webhook URL in the cluster (optional Secret, kubernetes/README.md).
 
 ## Phase 6 - Helm — Pending
 
-- Reusable chart (or umbrella chart) for the platform
+- Reusable chart (or umbrella chart) for the platform, starting from the Phase 5 manifests
+- Ingress for the gateway and HorizontalPodAutoscaler with metrics-server (from Phase 5)
 - Configurable values; environment-specific values files (dev, staging, prod)
 - Release management: install, upgrade, history, rollback; chart linting and templating checks in CI
 
@@ -300,7 +366,7 @@ Prometheus, Grafana and Alertmanager for the Compose environment. Guide:
       loop lag, firing alerts); admin password from `monitoring/.env`, sign-up and anonymous access disabled
 - [x] No application change: the services' existing metrics (Phase 1) were sufficient
 - [ ] Database metrics (`postgres_exporter`): moved to Phase 9
-- [ ] Kubernetes metrics, pod-restart alerts, cluster dashboards: moved to Phase 5
+- [x] Kubernetes metrics, pod-restart alerts, cluster dashboards: delivered with Phase 5
 
 ### Verification (2026-10-17, Windows 11, Docker Desktop, Compose v5)
 
@@ -328,8 +394,8 @@ Prometheus, Grafana and Alertmanager for the Compose environment. Guide:
 ## Phase 9 - Platform hardening — Pending
 
 - Security review; secret management (e.g. Sealed Secrets or External Secrets)
-- NetworkPolicies (only the gateway reachable from ingress; services reachable only by their callers)
-- Pod security standards, resource quotas and limit ranges
+- NetworkPolicies and Pod Security Admission: delivered with Phase 5; egress restrictions remain
+- Resource quotas and limit ranges
 - Database backup/restore and disaster-recovery considerations; authentication and rate limiting at the edge
 - PostgreSQL metrics with `postgres_exporter` and a dedicated monitoring role (from Phase 8)
 - Server hardening with Ansible: SSH daemon settings, firewall, users (from Phase 4)

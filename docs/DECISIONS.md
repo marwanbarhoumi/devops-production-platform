@@ -351,6 +351,51 @@ volume; database reachability is covered by the services' readiness checks and S
 (kube-state-metrics, node-exporter, pod restarts) come with Phase 5. Prometheus and Alertmanager have no
 authentication, which is acceptable only while they are bound to `127.0.0.1`.
 
+## D-031 Kubernetes with plain manifests and Kustomize, alongside Docker Compose
+
+**Decision:** the platform runs on Kubernetes (validated on Minikube with Calico) from plain manifests in
+`kubernetes/`, assembled with Kustomize (`kubectl apply -k`), in two namespaces: `devops-platform` (services and
+PostgreSQL) and `monitoring` (Prometheus, Alertmanager, Grafana, kube-state-metrics, node-exporter). Docker
+Compose stays as it is. The cluster runs the images Jenkins publishes to GHCR (`<sha12>` tags, D-025); it never
+builds images. Specifically:
+
+- **Compose and Kubernetes side by side.** Compose remains the fastest development loop and is what the CI
+  integration tests, the Phase 8 runbooks and the Ansible-prepared hosts use. Kubernetes is a second runtime for
+  the same images and configuration, not a replacement: the PostgreSQL init script, `alertmanager.yml`, the
+  platform alert rules, the Grafana data source and the Platform overview dashboard are shared files, turned
+  into ConfigMaps by Kustomize. Kubernetes-only monitoring files live in separate directories so the Compose
+  stack does not load rules for metrics it does not have.
+- **Kustomize, not Helm.** Helm is Phase 6. Kustomize is built into `kubectl`, needs no extra tool, and its
+  `configMapGenerator`/`secretGenerator` give hashed names, so configuration changes roll the pods. The chart in
+  Phase 6 can start from these manifests.
+- **PostgreSQL as a StatefulSet** with one replica and a volume claim template, same image, init script and
+  roles as Compose (D-003, D-004): the database architecture does not change between runtimes.
+- **Secrets** from git-ignored `.env` files through `secretGenerator`. The GHCR packages stay private: the
+  cluster pulls them with an in-cluster `dockerconfigjson` Secret (`ghcr-pull`) holding a classic token limited
+  to `read:packages`, typed into a credential prompt and passed to `kubectl` on standard input (never in a
+  command line, file or the repository). Loading images into the node is the documented fallback. Making the
+  packages public would have been simpler and was rejected.
+- **Rollouts** use `maxUnavailable: 0` and `minReadySeconds: 45`, longer than the liveness probe needs to kill a
+  broken pod: the restart test showed that without it, a version that passes readiness but fails liveness
+  replaces every healthy pod.
+- **Prometheus without the Operator**, with Kubernetes service discovery limited by namespaced Roles. Job names
+  and the `service` label match Compose, so the existing rules and dashboard work unchanged. kube-state-metrics
+  and node-exporter provide object and node state; eight Kubernetes alert rules are unit-tested with `promtool`.
+- **Security:** Pod Security `restricted` enforced in `devops-platform`; every pod non-root, read-only, without
+  capabilities, with `RuntimeDefault` seccomp; service account tokens mounted only where the API is used;
+  default-deny NetworkPolicies with explicit allowed paths (from the Phase 9 plan, done now because the
+  cluster exists). node-exporter's read-only `/proc` and `/sys` host mounts are the one exception (Trivy
+  KSV-0121 accepted for that file, approved by the owner, with an expiry date), so `monitoring` enforces
+  `privileged` and warns on `restricted`.
+
+**Why:** the project needs to show Kubernetes operation (rollouts, probes, self-healing, RBAC, network policy,
+cluster monitoring) without losing the simple Compose workflow or duplicating configuration. A local cluster
+with the Docker driver needs no cloud account and reproduces on any machine with Docker Desktop.
+
+**Not included:** Ingress and TLS (access by `kubectl port-forward`), HorizontalPodAutoscaler and metrics-server,
+cAdvisor container metrics, the Prometheus Operator, database replication and backups, and automated deployment
+from Jenkins (Phase 7). The Ansible role for Kubernetes node prerequisites is not needed for Minikube.
+
 ## Roadmap changes
 
 Any change to [PROJECT_PLAN.md](PROJECT_PLAN.md) phases is recorded here.
@@ -366,3 +411,7 @@ Any change to [PROJECT_PLAN.md](PROJECT_PLAN.md) phases is recorded here.
 - **2026-10-17:** Phase 8 is delivered for the Docker Compose environment before Phases 5-7. Kubernetes metrics
   (kube-state-metrics, node-exporter), pod-restart alerts and cluster dashboards move to Phase 5, where the
   cluster exists; PostgreSQL metrics (`postgres_exporter`) move to Phase 9 with the database work (D-030).
+- **2026-10-17:** Phase 5 delivers the cluster on Minikube (D-031). The HorizontalPodAutoscaler (needs
+  metrics-server) and the Ingress move to Phase 6, where the chart makes them configurable per environment. The
+  Ansible role for Kubernetes node prerequisites is dropped while the cluster is local. NetworkPolicies and Pod
+  Security Admission, planned for Phase 9, are delivered with Phase 5; quotas and limit ranges stay in Phase 9.

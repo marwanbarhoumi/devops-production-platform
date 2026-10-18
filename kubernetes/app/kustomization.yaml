@@ -1,0 +1,70 @@
+# Application namespace: api-gateway, product-service, order-service and PostgreSQL.
+#   Copy-Item kubernetes/app/.env.example kubernetes/app/.env   # then set the three passwords
+#   kubectl apply -k kubernetes/app
+# Guide: kubernetes/README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: devops-platform
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: devops-production-platform
+
+resources:
+  - namespace.yaml
+  - ../../infra/postgres
+  - postgres.yaml
+  - product-service.yaml
+  - order-service.yaml
+  - api-gateway.yaml
+  - monitoring-access.yaml
+  - network-policies.yaml
+
+configMapGenerator:
+  - name: product-service-config
+    literals:
+      - NODE_ENV=production
+      - PORT=7001
+      - LOG_LEVEL=info
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=products_db
+      - DB_USER=product_svc
+  - name: order-service-config
+    literals:
+      - NODE_ENV=production
+      - PORT=7002
+      - LOG_LEVEL=info
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=orders_db
+      - DB_USER=order_svc
+      - PRODUCT_SERVICE_URL=http://product-service:7001
+      - PRODUCT_SERVICE_TIMEOUT_MS=2000
+  - name: api-gateway-config
+    literals:
+      - NODE_ENV=production
+      - PORT=7000
+      - LOG_LEVEL=info
+      - PRODUCT_SERVICE_URL=http://product-service:7001
+      - ORDER_SERVICE_URL=http://order-service:7002
+      - UPSTREAM_TIMEOUT_MS=5000
+
+# POSTGRES_PASSWORD, PRODUCT_DB_PASSWORD, ORDER_DB_PASSWORD from the git-ignored kubernetes/app/.env.
+# The name gets a content hash, so changing a value rolls the pods that use it. PostgreSQL applies the
+# role passwords only when its volume is first initialised (as with Docker Compose).
+secretGenerator:
+  - name: postgres-credentials
+    envs:
+      - .env
+
+# Images published by Jenkins (D-025): <sha12> of the commit, never "latest". Change newTag to deploy
+# another validated build.
+images:
+  - name: ghcr.io/marwanbarhoumi/devops-production-platform/api-gateway
+    newTag: 2d89c059ed41
+  - name: ghcr.io/marwanbarhoumi/devops-production-platform/product-service
+    newTag: 2d89c059ed41
+  - name: ghcr.io/marwanbarhoumi/devops-production-platform/order-service
+    newTag: 2d89c059ed41

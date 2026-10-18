@@ -1,0 +1,257 @@
+# Unit tests for the Kubernetes alert rules (promtool test rules), run without a live Prometheus:
+#   docker run --rm -v "${PWD}/monitoring/prometheus:/p:ro" -w /p --entrypoint promtool prom/prometheus:v3.15.0 test rules tests/kubernetes-alerts.test.yml
+# Series use kube-state-metrics v2 metric and label names.
+
+rule_files:
+  - ../rules-kubernetes/kubernetes-alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: Crash loop fires after 5 minutes, frequent restarts after 1 minute above 3 restarts in 15 minutes
+    interval: 15s
+    input_series:
+      - series: 'kube_pod_container_status_waiting_reason{job="kube-state-metrics", namespace="devops-platform", pod="order-service-abc", container="order-service", reason="CrashLoopBackOff"}'
+        values: "1x40"
+      # One restart every 15 s.
+      - series: 'kube_pod_container_status_restarts_total{job="kube-state-metrics", namespace="devops-platform", pod="order-service-abc", container="order-service"}'
+        values: "0+1x40"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PodCrashLooping
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: PodCrashLooping
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: kube-state-metrics
+              namespace: devops-platform
+              pod: order-service-abc
+              container: order-service
+              reason: CrashLoopBackOff
+              service: order-service
+            exp_annotations:
+              summary: "devops-platform/order-service-abc: container order-service is crash looping"
+              description: "Container order-service of pod devops-platform/order-service-abc has been in CrashLoopBackOff for more than 5 minutes: it keeps exiting or failing its liveness probe."
+              runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#podcrashlooping
+      - eval_time: 1m
+        alertname: PodRestartingFrequently
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: PodRestartingFrequently
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: kube-state-metrics
+              namespace: devops-platform
+              pod: order-service-abc
+              container: order-service
+              service: order-service
+            exp_annotations:
+              summary: "devops-platform/order-service-abc: container order-service restarted 12 times in 15 minutes"
+              description: "Container order-service of pod devops-platform/order-service-abc restarted more than 3 times in the last 15 minutes."
+              runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#podrestartingfrequently
+
+  - name: Deployment availability ignores healthy and scaled-to-zero deployments
+    interval: 15s
+    input_series:
+      # product-service loses every available replica after 1 minute.
+      - series: 'kube_deployment_spec_replicas{job="kube-state-metrics", namespace="devops-platform", deployment="product-service"}'
+        values: "2x60"
+      - series: 'kube_deployment_status_replicas_available{job="kube-state-metrics", namespace="devops-platform", deployment="product-service"}'
+        values: "2 2 2 2 0x56"
+      - series: 'kube_deployment_spec_replicas{job="kube-state-metrics", namespace="devops-platform", deployment="order-service"}'
+        values: "2x60"
+      - series: 'kube_deployment_status_replicas_available{job="kube-state-metrics", namespace="devops-platform", deployment="order-service"}'
+        values: "2x60"
+      - series: 'kube_deployment_spec_replicas{job="kube-state-metrics", namespace="devops-platform", deployment="api-gateway"}'
+        values: "0x60"
+      - series: 'kube_deployment_status_replicas_available{job="kube-state-metrics", namespace="devops-platform", deployment="api-gateway"}'
+        values: "0x60"
+    alert_rule_test:
+      - eval_time: 90s
+        alertname: DeploymentReplicasUnavailable
+        exp_alerts: []
+      - eval_time: 150s
+        alertname: DeploymentReplicasUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: kube-state-metrics
+              namespace: devops-platform
+              deployment: product-service
+              service: product-service
+            exp_annotations:
+              summary: "devops-platform/product-service has no available replica"
+              description: "Deployment devops-platform/product-service has had zero available (ready) replicas for more than 1 minute: its Service has no endpoint."
+              runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#deploymentreplicasunavailable
+      - eval_time: 10m
+        alertname: DeploymentReplicasMismatch
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: DeploymentReplicasMismatch
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: kube-state-metrics
+              namespace: devops-platform
+              deployment: product-service
+              service: product-service
+            exp_annotations:
+              summary: "devops-platform/product-service: desired and available replicas differ"
+              description: "Deployment devops-platform/product-service has not had its desired number of available replicas for more than 10 minutes."
+              runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#deploymentreplicasmismatch
+
+  - name: Pod readiness ignores completed pods, container waiting ignores crash loops
+    interval: 15s
+    input_series:
+      - series: 'kube_pod_status_ready{job="kube-state-metrics", namespace="devops-platform", pod="product-service-xyz", uid="u1", condition="false"}'
+        values: "1x50"
+      - series: 'kube_pod_status_phase{job="kube-state-metrics", namespace="devops-platform", pod="product-service-xyz", uid="u1", phase="Running"}'
+        values: "1x50"
+      - series: 'kube_pod_labels{job="kube-state-metrics", namespace="devops-platform", pod="product-service-xyz", uid="u1", label_app_kubernetes_io_name="product-service"}'
+        values: "1x50"
+      # A completed pod is not Ready either, and must not alert.
+      - series: 'kube_pod_status_ready{job="kube-state-metrics", namespace="devops-platform", pod="one-off-job", uid="u2", condition="false"}'
+        values: "1x50"
+      - series: 'kube_pod_status_phase{job="kube-state-metrics", namespace="devops-platform", pod="one-off-job", uid="u2", phase="Succeeded"}'
+        values: "1x50"
+      - series: 'kube_pod_status_phase{job="kube-state-metrics", namespace="devops-platform", pod="one-off-job", uid="u2", phase="Running"}'
+        values: "0x50"
+      - series: 'kube_pod_labels{job="kube-state-metrics", namespace="devops-platform", pod="one-off-job", uid="u2"}'
+        values: "1x50"
+      - series: 'kube_pod_container_status_waiting_reason{job="kube-state-metrics", namespace="devops-platform", pod="api-gateway-new", container="api-gateway", reason="ImagePullBackOff"}'
+        values: "1x50"
+      - series: 'kube_pod_container_status_waiting_reason{job="kube-state-metrics", namespace="devops-platform", pod="order-service-abc", container="order-service", reason="CrashLoopBackOff"}'
+        values: "1x50"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: KubernetesPodNotReady
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: KubernetesPodNotReady
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: kube-state-metrics
+              namespace: devops-platform
+              pod: product-service-xyz
+              uid: u1
+              condition: "false"
+              service: product-service
+            exp_annotations:
+              summary: "devops-platform/product-service-xyz is not ready"
+              description: "Pod devops-platform/product-service-xyz has not been Ready for more than 5 minutes and receives no Service traffic."
+              runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#kubernetespodnotready
+      - eval_time: 9m
+        alertname: KubernetesContainerWaiting
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: KubernetesContainerWaiting
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: devops-platform
+              pod: api-gateway-new
+              container: api-gateway
+              service: api-gateway
+            exp_annotations:
+              summary: "devops-platform/api-gateway-new: container api-gateway is waiting to start"
+              description: "Container api-gateway of pod devops-platform/api-gateway-new has been waiting to start for more than 10 minutes, current reason ImagePullBackOff."
+              runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#kubernetescontainerwaiting
+
+  # Seen on the cluster: the kubelet alternates ErrImagePull and ImagePullBackOff, and kube-state-metrics
+  # replaces one series with the other. The alert must still fire after 10 minutes.
+  - name: Container waiting with an alternating reason
+    interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_waiting_reason{job="kube-state-metrics", namespace="devops-platform", pod="order-service-new", container="order-service", reason="ErrImagePull"}'
+        values: "1 stale 1 stale 1 stale 1 stale 1 stale 1 stale 1 stale"
+      - series: 'kube_pod_container_status_waiting_reason{job="kube-state-metrics", namespace="devops-platform", pod="order-service-new", container="order-service", reason="ImagePullBackOff"}'
+        values: "stale 1 stale 1 stale 1 stale 1 stale 1 stale 1 stale 1"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: KubernetesContainerWaiting
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: KubernetesContainerWaiting
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: devops-platform
+              pod: order-service-new
+              container: order-service
+              service: order-service
+            exp_annotations:
+              summary: "devops-platform/order-service-new: container order-service is waiting to start"
+              description: "Container order-service of pod devops-platform/order-service-new has been waiting to start for more than 10 minutes, current reason ImagePullBackOff."
+              runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#kubernetescontainerwaiting
+
+  - name: Node readiness and Kubernetes metric sources
+    interval: 15s
+    input_series:
+      - series: 'kube_node_status_condition{job="kube-state-metrics", node="dpp", condition="Ready", status="true"}'
+        values: "1 1 0x30"
+      - series: 'up{job="node-exporter", instance="10.244.0.5:9100", node="dpp"}'
+        values: "1 0x20"
+      - series: 'up{job="kube-state-metrics", instance="10.244.0.6:8080"}'
+        values: "1x20"
+      # Application pods are ServiceDown's job, not this alert's.
+      - series: 'up{job="platform-services", instance="10.244.0.9:7001", service="product-service"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: KubernetesNodeNotReady
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: KubernetesNodeNotReady
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: kube-state-metrics
+              node: dpp
+              condition: Ready
+              status: "true"
+            exp_annotations:
+              summary: "Node dpp is not ready"
+              description: "Node dpp has not reported Ready for more than 5 minutes; its pods are not getting traffic and will be evicted."
+              runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#kubernetesnodenotready
+      - eval_time: 3m
+        alertname: KubernetesTargetDown
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: KubernetesTargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: node-exporter
+              instance: 10.244.0.5:9100
+              node: dpp
+            exp_annotations:
+              summary: "node-exporter target 10.244.0.5:9100 is down"
+              description: "Prometheus has failed to scrape node-exporter at 10.244.0.5:9100 for more than 3 minutes; the Kubernetes alerts that depend on it cannot fire."
+              runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#kubernetestargetdown
+
+  # kube-state-metrics scaled to 0: its target disappears instead of reporting up == 0.
+  - name: Kubernetes metric source without a pod
+    interval: 15s
+    input_series:
+      - series: 'up{job="node-exporter", instance="10.244.0.5:9100", node="dpp"}'
+        values: "1x20"
+      - series: 'up{job="kube-state-metrics", instance="10.244.0.6:8080"}'
+        values: "1 1 stale"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KubernetesTargetDown
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: KubernetesTargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: kube-state-metrics
+            exp_annotations:
+              summary: "kube-state-metrics has no scrape target"
+              description: "Prometheus has found no kube-state-metrics pod to scrape for more than 3 minutes; the Kubernetes alerts that depend on it cannot fire."
+              runbook_url: https://github.com/marwanbarhoumi/devops-production-platform/blob/main/monitoring/README.md#kubernetestargetdown

@@ -135,8 +135,43 @@ tmpfs, all capabilities dropped, `no-new-privileges`, `init: true` for signal ha
 memory limits, rotated JSON logs (3 × 10 MB). PostgreSQL data lives in the named volume
 `devops-production-platform-postgres-data`.
 
-Internal services are published on `127.0.0.1` only for local debugging. In Kubernetes (Phase 5)
-they will be `ClusterIP` services reachable only through the gateway/ingress.
+Internal services are published on `127.0.0.1` only for local debugging. In Kubernetes they are `ClusterIP`
+services reachable only by their callers (next section).
+
+## Runtime (Kubernetes)
+
+The same images and configuration run on Kubernetes (`kubernetes/`, Kustomize; validated on Minikube with
+Calico). Compose is unchanged and remains the development runtime (D-031).
+
+```text
+ namespace devops-platform (Pod Security restricted)
+   port-forward ──► api-gateway ×2 ──► product-service ×2 ──► postgres-0 (StatefulSet, PVC)
+                         └───────────► order-service ×2 ───────┘ (and ──► product-service)
+
+ namespace monitoring
+   Prometheus ── scrapes ──► annotated pods in devops-platform (Kubernetes service discovery)
+       │                    kube-state-metrics, node-exporter (DaemonSet), itself, Alertmanager, Grafana
+       ├──► Alertmanager ──► webhook
+       └──◄ Grafana (dashboards)
+```
+
+| Workload | Kind | Replicas | Probes | Storage |
+| --- | --- | --- | --- | --- |
+| api-gateway, product-service, order-service | Deployment + Service + PodDisruptionBudget | 2 each | startup/liveness `/health`, readiness `/ready` (gateway `/health`, as in Compose) | none |
+| postgres | StatefulSet + headless Service | 1 | `pg_isready` | PVC 2Gi |
+| prometheus, alertmanager, grafana | Deployment (Recreate) + Service | 1 each | `/-/ready`, `/api/health` | PVCs 5Gi, 256Mi, 1Gi |
+| kube-state-metrics | Deployment + Service | 1 | `/livez`, `/readyz` | none |
+| node-exporter | DaemonSet | 1 per node | `/` | none |
+
+Services address each other by Service name through cluster DNS, with the same environment variables as
+Compose (ConfigMaps); passwords come from Secrets generated from git-ignored files, and the private GHCR images
+are pulled with an in-cluster pull Secret. Rolling updates add a new pod before removing an old one
+(`maxSurge: 1`, `maxUnavailable: 0`) and only count it once it has stayed Ready for 45 seconds
+(`minReadySeconds`), so a version that fails its liveness probe stalls the rollout instead of replacing the
+healthy pods. The per-service advisory lock makes concurrent migrations safe. NetworkPolicies deny all ingress by default and allow only gateway → services,
+order-service → product-service, services → PostgreSQL, and Prometheus → scrape targets. Nothing is exposed
+outside the cluster; access is through `kubectl port-forward`. Details:
+[kubernetes/README.md](../kubernetes/README.md).
 
 ## Continuous integration (Jenkins)
 
@@ -202,3 +237,9 @@ inhibits the generic target-down alert while ServiceDown fires, and sends firing
 a webhook. Grafana's data source and "Platform overview" dashboard are provisioned from files. PostgreSQL
 internals and Docker-level container metrics are not collected (D-030). Details:
 [monitoring/README.md](../monitoring/README.md).
+
+On Kubernetes the same configuration runs in namespace `monitoring`, with a Kubernetes scrape configuration
+(service discovery of the application pods, kube-state-metrics and node-exporter), eight Kubernetes alert rules
+(crash loops, restarts, unavailable or mismatched replicas, pods not ready, containers waiting, nodes not ready,
+metric sources down) and a "Kubernetes platform" dashboard, in addition to the platform rules and dashboard
+(monitoring/README.md, section 7).

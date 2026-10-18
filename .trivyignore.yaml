@@ -15,3 +15,10 @@ misconfigurations:
       Disposable Ansible test target: systemd runs as PID 1 and needs root. Never built or published by CI;
       the service images keep the non-root rule. Owner marwan.
     expired_at: 2027-04-16
+  - id: KSV-0121
+    paths:
+      - kubernetes/monitoring/node-exporter.yaml
+    statement: >-
+      node-exporter reads node metrics from the host's /proc and /sys, mounted read-only (no host root filesystem,
+      no hostNetwork/hostPID, non-root, no capabilities). Approved by the owner on 2026-10-17. Owner marwan.
+    expired_at: 2027-04-17

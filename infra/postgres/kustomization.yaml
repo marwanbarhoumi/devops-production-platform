@@ -1,0 +1,9 @@
+# The first-boot script as a ConfigMap for the Kubernetes PostgreSQL StatefulSet (kubernetes/app).
+# Docker Compose mounts the same file directly (docker-compose.yml), so both runtimes create the same roles.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+configMapGenerator:
+  - name: postgres-init
+    files:
+      - init/01-create-service-databases.sh

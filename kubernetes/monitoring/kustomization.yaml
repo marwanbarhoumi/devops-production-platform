@@ -1,0 +1,29 @@
+# Monitoring namespace: Prometheus, Alertmanager, Grafana, kube-state-metrics, node-exporter.
+#   Copy-Item kubernetes/monitoring/.env.example kubernetes/monitoring/.env   # then set the Grafana password
+#   kubectl apply -k kubernetes/monitoring
+# Configuration files (rules, dashboards, alertmanager.yml) are shared with Docker Compose: ../../monitoring.
+# Guide: kubernetes/README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: devops-production-platform
+
+resources:
+  - namespace.yaml
+  - ../../monitoring
+  - prometheus.yaml
+  - alertmanager.yaml
+  - grafana.yaml
+  - kube-state-metrics.yaml
+  - node-exporter.yaml
+  - network-policies.yaml
+
+# GRAFANA_ADMIN_USER and GRAFANA_ADMIN_PASSWORD from the git-ignored kubernetes/monitoring/.env.
+secretGenerator:
+  - name: grafana-admin
+    envs:
+      - .env

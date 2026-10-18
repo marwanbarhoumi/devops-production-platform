@@ -1,6 +1,7 @@
-# Alertmanager configuration for devops-production-platform (monitoring/docker-compose.yml).
-# The webhook URL is read from the Compose secret "alertmanager_webhook_url" (the file named by
-# ALERTMANAGER_WEBHOOK_URL_FILE in monitoring/.env) each time a notification is sent; it is never stored here.
+# Alertmanager configuration for devops-production-platform (monitoring/docker-compose.yml and, unchanged,
+# kubernetes/monitoring). The webhook URL is read from /run/secrets/alertmanager_webhook_url each time a
+# notification is sent; it is never stored here. Compose: the file named by ALERTMANAGER_WEBHOOK_URL_FILE in
+# monitoring/.env. Kubernetes: the optional Secret "alertmanager-webhook" (kubernetes/README.md).
 # Validate: docker run --rm -v "${PWD}/monitoring/alertmanager:/cfg:ro" --entrypoint amtool prom/alertmanager:v0.34.1 check-config /cfg/alertmanager.yml
 
 route:
@@ -28,3 +29,15 @@ inhibit_rules:
   - source_matchers: ['alertname="ServiceDown"']
     target_matchers: ['alertname="PrometheusTargetDown"']
     equal: [instance]
+  # Kubernetes only (kubernetes/monitoring); these alerts never exist in the Compose stack.
+  - source_matchers: ['alertname="KubernetesTargetDown"']
+    target_matchers: ['alertname="PrometheusTargetDown"']
+    equal: [instance]
+  # No replica available already implies fewer than desired.
+  - source_matchers: ['alertname="DeploymentReplicasUnavailable"']
+    target_matchers: ['alertname="DeploymentReplicasMismatch"']
+    equal: [namespace, deployment]
+  # A crash-looping container is also restarting frequently: report the crash loop.
+  - source_matchers: ['alertname="PodCrashLooping"']
+    target_matchers: ['alertname="PodRestartingFrequently"']
+    equal: [namespace, pod, container]
